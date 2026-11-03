@@ -11,13 +11,11 @@ class GameCollection {
     required this.availableLevels,
   });
 
-  // Sắp xếp số thứ tự ảnh tăng dần
   List<int> get sortedLevels {
     final levels = availableLevels.toList()..sort();
     return levels;
   }
 
-  // Ánh xạ cấp độ trong game sang số file ảnh thực tế
   String imagePath(int level) {
     final levels = sortedLevels;
 

@@ -27,7 +27,7 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 16),
 
                     const Text(
-                      'BơAnh',
+                      'BơAnh Alliance',
                       style: TextStyle(
                         fontSize: 48,
                         fontWeight: FontWeight.w900,

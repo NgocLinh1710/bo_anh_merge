@@ -12,7 +12,6 @@ class GameLogic {
   static GameState createNewGame(int maxLevel) {
     final board = List<int?>.filled(boardCapacity, null);
 
-    // Sinh đủ 9 ảnh ngẫu nhiên
     for (int i = 0; i < boardCapacity; i++) {
       board[i] = _randomStartLevel(maxLevel);
     }
@@ -37,6 +36,8 @@ class GameLogic {
       board: board,
       score: 0,
       moves: 0,
+      pairsMerged: 0,
+      maxLevelCelebrations: 0,
       isGameOver: isGameOver(board, maxLevel),
     );
   }
@@ -60,7 +61,6 @@ class GameLogic {
     return min(level, maxLevel);
   }
 
-  // Lấy danh sách ô trống
   static List<int> _emptyCells(List<int?> board) {
     return [
       for (int i = 0; i < board.length; i++)
@@ -68,20 +68,18 @@ class GameLogic {
     ];
   }
 
-  // Sinh một ảnh mới vào vị trí ngẫu nhiên
   static bool _spawnTile(List<int?> board, int maxLevel) {
     final empty = _emptyCells(board);
 
     if (empty.isEmpty) return false;
 
     final position = empty[_random.nextInt(empty.length)];
-
     board[position] = _randomStartLevel(maxLevel);
 
     return true;
   }
 
-  // Kiểm tra hai ô có thể ghép không
+  // Ảnh cấp tối đa không thể ghép, kể cả với ảnh cùng cấp
   static bool canMerge(List<int?> board, int from, int to, int maxLevel) {
     if (from < 0 ||
         to < 0 ||
@@ -100,7 +98,6 @@ class GameLogic {
         first < maxLevel;
   }
 
-  // Tìm ảnh cùng cấp độ nằm cạnh nhau
   static List<int> _findAdjacentMatches(
     List<int?> board,
     int position,
@@ -119,18 +116,13 @@ class GameLogic {
     return neighbors.where((index) => board[index] == level).toList();
   }
 
-  // Đếm số ảnh hiện có trên bàn cờ
-  static int _countTiles(List<int?> board) {
-    return board.where((tile) => tile != null).length;
-  }
-
   static void _refillBoard(List<int?> board, int maxLevel) {
     while (_emptyCells(board).isNotEmpty) {
-      _spawnTile(board, maxLevel);
+      if (!_spawnTile(board, maxLevel)) break;
     }
   }
 
-  // Thực hiện ghép ảnh và xử lý chain merge
+  // Ghép ảnh và xử lý chain merge
   static GameState merge(GameState current, int from, int to, int maxLevel) {
     if (current.isGameOver || !canMerge(current.board, from, to, maxLevel)) {
       return current;
@@ -140,15 +132,22 @@ class GameLogic {
 
     final currentLevel = board[from]!;
 
-    // Ghép hai ảnh thành một ảnh cấp cao hơn
     board[from] = null;
     board[to] = currentLevel + 1;
 
-    int gainedScore = 0;
+    int gainedScore = currentLevel + 1;
+    int mergedPairs = 1;
+    int maxLevelCelebrations = current.maxLevelCelebrations;
+
     int currentPosition = to;
     int newLevel = currentLevel + 1;
 
-    // Chain merge với ảnh cùng cấp độ liền kề
+    // Nếu lần ghép đầu tiên tạo ra ảnh cấp tối đa
+    if (newLevel == maxLevel) {
+      maxLevelCelebrations++;
+    }
+
+    // Chain merge với ảnh cùng cấp độ nằm cạnh nhau
     while (newLevel < maxLevel) {
       final matches = _findAdjacentMatches(board, currentPosition, newLevel);
 
@@ -159,32 +158,38 @@ class GameLogic {
       board[matchedPosition] = null;
       board[currentPosition] = newLevel + 1;
 
-      gainedScore += newLevel + 1;
       newLevel++;
+      mergedPairs++;
+      gainedScore += newLevel;
+
+      // Mỗi lần tạo ảnh cấp tối đa đều ghi nhận một sự kiện
+      if (newLevel == maxLevel) {
+        maxLevelCelebrations++;
+      }
     }
 
-    gainedScore += currentLevel + 1;
-
+    // Lấp đầy tất cả ô trống sau khi xử lý chain merge
     _refillBoard(board, maxLevel);
 
     final result = GameState(
       board: board,
       score: current.score + gainedScore,
       moves: current.moves + 1,
+      pairsMerged: current.pairsMerged + mergedPairs,
+      maxLevelCelebrations: maxLevelCelebrations,
       maxLevelNoticeShownFor: current.maxLevelNoticeShownFor,
+      isGameOver: isGameOver(board, maxLevel),
     );
 
-    return result.copyWith(isGameOver: isGameOver(board, maxLevel));
+    return result;
   }
 
   // Kiểm tra game đã kết thúc chưa
   static bool isGameOver(List<int?> board, int maxLevel) {
-    // Bàn cờ còn ô trống thì chưa kết thúc
     if (board.length != boardCapacity || board.any((tile) => tile == null)) {
       return false;
     }
 
-    // Kiểm tra mọi cặp ảnh trên bàn cờ
     for (int i = 0; i < board.length; i++) {
       for (int j = i + 1; j < board.length; j++) {
         if (canMerge(board, i, j, maxLevel)) {
@@ -196,7 +201,6 @@ class GameLogic {
     return true;
   }
 
-  // Kiểm tra có ảnh đạt cấp độ tối đa không
   static bool containsMaxLevel(List<int?> board, int maxLevel) {
     return board.any((tile) => tile == maxLevel);
   }
