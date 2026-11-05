@@ -1,71 +1,140 @@
 import 'package:flutter/services.dart';
 
 import '../models/game_collection.dart';
+import '../models/game_mode.dart';
 
 class CollectionService {
-  // Những bộ sưu tập miễn phí
-  static const Set<String> freeCollections = {
-    'collection_1',
-    'collection_test',
+  // Những ver free
+  static const Set<String> freeCollections = {'collection_1', 'collection_2'};
+
+  // Giá mở khóa riêng cho từng ver
+  static const Map<String, int> collectionPrices = {
+    'collection_3': 110,
+    'collection_4': 1110,
+    'collection_5': 111,
+    'collection_8': 1402,
   };
 
-  // Giá mở khóa riêng cho từng bộ sưu tập
-  static const Map<String, int> collectionPrices = {'collection_2': 26};
-
-  // Tên hiển thị của từng bộ sưu tập
+  // Tên hiển thị của từng ver
   static const Map<String, String> collectionNames = {
-    'collection_1': 'ATVNCG',
-    'collection_2': 'by cacaomewmew',
-    'collection_test': 'test',
+    'collection_1': 'Bơ Lavie',
+    'collection_2': 'Bơ sticker',
+    'collection_3': 'Bơ chinh',
+    'collection_4': 'Bơ bad',
+    'collection_5': 'Bơ meme',
+    'collection_8': 'Bơ sticker promax',
   };
 
-  // Kiểm tra bộ sưu tập có miễn phí không
+  // Cấu hình các chế độ được phép chơi
+  static const Map<String, List<GameMode>> collectionModes = {
+    'collection_1': [GameMode.free, GameMode.timed],
+    'collection_2': [GameMode.free, GameMode.timed],
+    'collection_3': [GameMode.free, GameMode.timed],
+    'collection_4': [GameMode.free, GameMode.timed],
+    'collection_5': [GameMode.free, GameMode.timed],
+    'collection_8': [GameMode.free],
+  };
+
+  // Cấu hình nhóm âm thanh chiến thắng
+  static const Map<String, String> collectionSoundGroups = {
+    'collection_1': 'sound_1',
+    'collection_2': 'sound_1',
+    'collection_3': 'sound_1',
+    'collection_4': 'sound_1',
+    'collection_5': 'sound_2',
+    'collection_8': 'sound_2',
+  };
+
+  static const Set<String> supportedExtensions = {
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.webp',
+  };
+
   static bool isFree(String collectionId) {
     return freeCollections.contains(collectionId);
   }
 
-  // Lấy giá mở khóa riêng
   static int? unlockPrice(String collectionId) {
     return collectionPrices[collectionId];
   }
 
-  // Tải danh sách bộ sưu tập từ AssetManifest
+  static List<GameMode> availableModes(String collectionId) {
+    return collectionModes[collectionId] ?? const [GameMode.free];
+  }
+
+  static String victorySoundGroup(String collectionId) {
+    return collectionSoundGroups[collectionId] ?? 'sound_1';
+  }
+
   static Future<List<GameCollection>> loadCollections() async {
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     final assets = manifest.listAssets();
 
-    final Map<String, Set<int>> collectionLevels = {};
-
-    // Nhận diện collection_1, collection_2, collection_test,...
-    final pattern = RegExp(
-      r'^assets/collections/(collection_[^/]+)/(\d+)\.jpg$',
-    );
+    // Lưu danh sách đường dẫn ảnh theo từng ver
+    final Map<String, List<String>> collectionImages = {};
 
     for (final asset in assets) {
-      final match = pattern.firstMatch(asset);
+      final parts = asset.split('/');
 
-      if (match == null) continue;
+      if (parts.length != 4) continue;
+      if (parts[0] != 'assets' || parts[1] != 'collections') {
+        continue;
+      }
 
-      final collectionId = match.group(1)!;
-      final fileNumber = int.parse(match.group(2)!);
+      final collectionId = parts[2];
+      final fileName = parts[3];
 
-      collectionLevels.putIfAbsent(collectionId, () => <int>{}).add(fileNumber);
+      if (!collectionId.startsWith('collection_')) {
+        continue;
+      }
+
+      final extension = fileName.contains('.')
+          ? fileName.substring(fileName.lastIndexOf('.')).toLowerCase()
+          : '';
+
+      if (!supportedExtensions.contains(extension)) {
+        continue;
+      }
+
+      collectionImages.putIfAbsent(collectionId, () => <String>[]).add(asset);
     }
 
-    final collections = collectionLevels.entries.map((entry) {
-      final levels = entry.value;
+    final collections = collectionImages.entries.map((entry) {
       final collectionId = entry.key;
+      final images = entry.value;
+
+      // Sắp xếp theo tên file để thứ tự cấp độ ổn định
+      images.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+      // Tạo cấp độ tuần tự từ 1 đến số ảnh
+      final Map<int, String> imagePaths = {};
+
+      for (int i = 0; i < images.length; i++) {
+        imagePaths[i + 1] = images[i];
+      }
+
+      final levels = imagePaths.keys.toSet();
+
       final collectionNumber = collectionId.split('_').last;
 
       return GameCollection(
         id: collectionId,
         name: collectionNames[collectionId] ?? 'Bộ ảnh $collectionNumber',
-        maxLevel: levels.length,
+        maxLevel: images.length,
         availableLevels: levels,
+        imagePaths: imagePaths,
+        availableModes: availableModes(collectionId),
+        victorySoundGroup: victorySoundGroup(collectionId),
       );
     }).toList();
 
-    collections.sort((a, b) => a.id.compareTo(b.id));
+    collections.sort((a, b) {
+      final numberA = int.tryParse(a.id.split('_').last) ?? 0;
+      final numberB = int.tryParse(b.id.split('_').last) ?? 0;
+      return numberA.compareTo(numberB);
+    });
 
     return collections;
   }

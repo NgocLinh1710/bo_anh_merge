@@ -7,6 +7,7 @@ import '../main.dart';
 import '../models/game_collection.dart';
 import '../services/collection_service.dart';
 import '../services/game_storage_service.dart';
+import '../models/game_mode.dart';
 
 class CollectionScreen extends StatefulWidget {
   const CollectionScreen({super.key});
@@ -32,7 +33,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
     _loadPlayerData();
   }
 
-  // Tải số xu và danh sách bộ sưu tập đã mở khóa
+  // Tải số xu và danh sách ver đã mở khóa
   Future<void> _loadPlayerData() async {
     try {
       final coins = await GameStorageService.loadTotalCoins();
@@ -60,13 +61,12 @@ class _CollectionScreenState extends State<CollectionScreen> {
     }
   }
 
-  // Kiểm tra bộ sưu tập đã được mở khóa hay chưa
+  // Kiểm tra ver đã được mở khóa hay chưa
   bool _isUnlocked(GameCollection collection) {
     return CollectionService.isFree(collection.id) ||
         unlockedCollections.contains(collection.id);
   }
 
-  // Xử lý khi người chơi chọn một bộ sưu tập
   Future<void> selectCollection(GameCollection collection) async {
     if (isUnlocking) return;
 
@@ -75,10 +75,16 @@ class _CollectionScreenState extends State<CollectionScreen> {
       return;
     }
 
+    // Hiển thị lựa chọn chế độ chơi
+    final selectedMode = await _showGameModeDialog(collection);
+
+    if (selectedMode == null || !mounted) return;
+
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => GameScreen(collection: collection),
+        builder: (context) =>
+            GameScreen(collection: collection, mode: selectedMode),
       ),
     );
 
@@ -87,13 +93,189 @@ class _CollectionScreenState extends State<CollectionScreen> {
     await _loadPlayerData();
   }
 
+  Future<GameMode?> _showGameModeDialog(GameCollection collection) async {
+    final availableModes = collection.availableModes;
+
+    if (availableModes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Bộ sưu tập này hiện chưa có chế độ chơi!'),
+        ),
+      );
+      return null;
+    }
+
+    return showDialog<GameMode>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: AppColors.cream,
+          elevation: 12,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 20,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.sports_esports_rounded,
+                    size: 48,
+                    color: AppColors.butterDark,
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  const Text(
+                    'Chọn chế độ chơi',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.text,
+                    ),
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  Text(
+                    collection.name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14, color: AppColors.text),
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  ...availableModes.map((mode) {
+                    final isFreeMode = mode == GameMode.free;
+
+                    final icon = isFreeMode
+                        ? Icons.all_inclusive_rounded
+                        : Icons.timer_rounded;
+
+                    final description = isFreeMode
+                        ? 'Chơi thoải mái, không giới hạn thời gian.\n'
+                              'Nhận 11 xu sau mỗi 14 cặp ghép thành công.'
+                        : 'Bắt đầu với 14 giây.\n'
+                              'Mỗi lần ghép sai bị trừ 1 giây.\n'
+                              'Nhận 10 xu sau mỗi 5 cặp ghép thành công.';
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: () {
+                            Navigator.of(dialogContext).pop(mode);
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: AppColors.butterDark.withValues(
+                                  alpha: 0.3,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 52,
+                                  height: 52,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.butterLight,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Icon(
+                                    icon,
+                                    size: 28,
+                                    color: AppColors.butterDark,
+                                  ),
+                                ),
+
+                                const SizedBox(width: 14),
+
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        mode.displayName,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.text,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 6),
+
+                                      Text(
+                                        description,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          height: 1.5,
+                                          color: AppColors.text,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                const SizedBox(width: 8),
+
+                                const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: AppColors.butterDark,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+
+                  const SizedBox(height: 4),
+
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                    },
+                    child: const Text(
+                      'Quay lại',
+                      style: TextStyle(color: AppColors.text),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   // Hiển thị hộp thoại xác nhận mở khóa
   Future<void> _showUnlockDialog(GameCollection collection) async {
     if (isUnlocking) return;
 
     final price = CollectionService.unlockPrice(collection.id);
 
-    // Bộ sưu tập chưa được thiết lập giá
+    // ver chưa được thiết lập giá
     if (price == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bộ sưu tập này hiện chưa mở bán!')),
@@ -116,10 +298,10 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
     final screenSize = MediaQuery.sizeOf(context);
 
-    // Chiều rộng tự điều chỉnh theo màn hình
+    // Chiều rộng
     final dialogWidth = (screenSize.width - 32).clamp(0.0, 520.0).toDouble();
 
-    // Chiều cao ảnh thay đổi theo màn hình
+    // Chiều cao
     final previewHeight = (screenSize.height * 0.22)
         .clamp(110.0, 220.0)
         .toDouble();

@@ -2,18 +2,35 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/game_mode.dart';
 import '../models/game_state.dart';
 
 class GameStorageService {
+  // Phần thưởng Chơi tự do
   static const int pairsPerReward = 14;
   static const int coinsPerReward = 11;
 
-  static String _gameKey(String collectionId) {
-    return 'game_$collectionId';
+  // Phần thưởng Thử thách thời gian
+  static const int timedPairsPerReward = 5;
+  static const int timedCoinsPerReward = 10;
+
+  static String _gameKey(String collectionId, [GameMode mode = GameMode.free]) {
+    if (mode == GameMode.free) {
+      return 'game_$collectionId';
+    }
+
+    return 'game_${collectionId}_${mode.storageKey}';
   }
 
-  static String _highScoreKey(String collectionId) {
-    return 'high_score_$collectionId';
+  static String _highScoreKey(
+    String collectionId, [
+    GameMode mode = GameMode.free,
+  ]) {
+    if (mode == GameMode.free) {
+      return 'high_score_$collectionId';
+    }
+
+    return 'high_score_${collectionId}_${mode.storageKey}';
   }
 
   static const String _totalCoinsKey = 'player_total_coins';
@@ -21,7 +38,11 @@ class GameStorageService {
   static const String _totalPairsKey = 'player_total_pairs';
   static const String _unlockedCollectionsKey = 'unlocked_collections';
 
-  static Future<void> saveGame(String collectionId, GameState state) async {
+  static Future<void> saveGame(
+    String collectionId,
+    GameState state, {
+    GameMode mode = GameMode.free,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
 
     final data = {
@@ -32,20 +53,26 @@ class GameStorageService {
       'maxLevelCelebrations': state.maxLevelCelebrations,
       'maxLevelNoticeShownFor': state.maxLevelNoticeShownFor,
       'isGameOver': state.isGameOver,
+      'remainingSeconds': state.remainingSeconds,
+      'timedRewardProgress': state.timedRewardProgress,
     };
 
-    await prefs.setString(_gameKey(collectionId), jsonEncode(data));
+    await prefs.setString(_gameKey(collectionId, mode), jsonEncode(data));
 
-    final currentHighScore = prefs.getInt(_highScoreKey(collectionId)) ?? 0;
+    final highScoreKey = _highScoreKey(collectionId, mode);
+    final currentHighScore = prefs.getInt(highScoreKey) ?? 0;
 
     if (state.score > currentHighScore) {
-      await prefs.setInt(_highScoreKey(collectionId), state.score);
+      await prefs.setInt(highScoreKey, state.score);
     }
   }
 
-  static Future<GameState?> loadGame(String collectionId) async {
+  static Future<GameState?> loadGame(
+    String collectionId, {
+    GameMode mode = GameMode.free,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
-    final jsonString = prefs.getString(_gameKey(collectionId));
+    final jsonString = prefs.getString(_gameKey(collectionId, mode));
 
     if (jsonString == null) return null;
 
@@ -66,12 +93,15 @@ class GameStorageService {
         maxLevelCelebrations: data['maxLevelCelebrations'] as int? ?? 0,
         maxLevelNoticeShownFor: data['maxLevelNoticeShownFor'] as int? ?? 0,
         isGameOver: data['isGameOver'] as bool? ?? false,
+        remainingSeconds: data['remainingSeconds'] as int? ?? 14,
+        timedRewardProgress: data['timedRewardProgress'] as int? ?? 0,
       );
     } catch (_) {
       return null;
     }
   }
 
+  // Thưởng Chơi tự do: đủ 14 cặp nhận 11 xu
   static Future<int> recordMergedPairs(int pairs) async {
     if (pairs <= 0) return 0;
 
@@ -89,6 +119,29 @@ class GameStorageService {
     await prefs.setInt(_coinProgressKey, remainingProgress);
     await prefs.setInt(_totalPairsKey, oldTotalPairs + pairs);
     await prefs.setInt(_totalCoinsKey, oldCoins + earnedCoins);
+
+    return earnedCoins;
+  }
+
+  // Thưởng Thử thách thời gian: mỗi mốc 5 cặp nhận 10 xu
+  static Future<int> recordTimedMergedPair({
+    required int pairs,
+    required bool reward,
+  }) async {
+    if (pairs <= 0) return 0;
+
+    final prefs = await SharedPreferences.getInstance();
+
+    final oldTotalPairs = prefs.getInt(_totalPairsKey) ?? 0;
+    final oldCoins = prefs.getInt(_totalCoinsKey) ?? 0;
+
+    final earnedCoins = reward ? timedCoinsPerReward : 0;
+
+    await prefs.setInt(_totalPairsKey, oldTotalPairs + pairs);
+
+    if (earnedCoins > 0) {
+      await prefs.setInt(_totalCoinsKey, oldCoins + earnedCoins);
+    }
 
     return earnedCoins;
   }
@@ -120,15 +173,12 @@ class GameStorageService {
     return true;
   }
 
-  // Lấy danh sách bộ sưu tập đã mở khóa
   static Future<Set<String>> loadUnlockedCollections() async {
     final prefs = await SharedPreferences.getInstance();
 
     return (prefs.getStringList(_unlockedCollectionsKey) ?? []).toSet();
   }
 
-  // Mở khóa và trừ xu
-  // Trả về false nếu không đủ xu
   static Future<bool> unlockCollection(String collectionId, int price) async {
     if (price < 0) return false;
 
@@ -151,13 +201,21 @@ class GameStorageService {
     return true;
   }
 
-  static Future<int> loadHighScore(String collectionId) async {
+  // Đọc kỷ lục riêng theo bộ ảnh và chế độ
+  static Future<int> loadHighScore(
+    String collectionId, {
+    GameMode mode = GameMode.free,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_highScoreKey(collectionId)) ?? 0;
+
+    return prefs.getInt(_highScoreKey(collectionId, mode)) ?? 0;
   }
 
-  static Future<void> clearGame(String collectionId) async {
+  static Future<void> clearGame(
+    String collectionId, {
+    GameMode mode = GameMode.free,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_gameKey(collectionId));
+    await prefs.remove(_gameKey(collectionId, mode));
   }
 }

@@ -7,18 +7,29 @@ class SoundService {
   static final AudioPlayer _player = AudioPlayer();
   static final Random _random = Random();
 
-  static Future<void> playRandomVictorySound() async {
+  // Phát ngẫu nhiên một âm thanh trong nhóm được chỉ định
+  static Future<void> playRandomVictorySound(
+    String soundGroup, {
+    bool loop = false,
+  }) async {
     try {
+      final normalizedGroup = soundGroup.trim();
+
+      if (normalizedGroup.isEmpty ||
+          normalizedGroup.contains('/') ||
+          normalizedGroup.contains(r'\')) {
+        return;
+      }
+
       final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
       final assets = manifest.listAssets();
 
-      final soundFiles = assets
-          .where(
-            (path) =>
-                path.startsWith('assets/sounds/') &&
-                path.toLowerCase().endsWith('.mp3'),
-          )
-          .toList();
+      final targetFolder = 'assets/sounds/$normalizedGroup/';
+
+      final soundFiles = assets.where((path) {
+        return path.startsWith(targetFolder) &&
+            path.toLowerCase().endsWith('.mp3');
+      }).toList();
 
       if (soundFiles.isEmpty) return;
 
@@ -26,16 +37,22 @@ class SoundService {
 
       await _player.stop();
 
+      // Cấu hình chế độ phát
+      await _player.setReleaseMode(
+        loop ? ReleaseMode.loop : ReleaseMode.release,
+      );
+
       await _player.play(
         AssetSource(selectedSound.replaceFirst('assets/', '')),
       );
-    } catch (e) {
-      // Không để lỗi âm thanh làm gián đoạn trò chơi
-    }
+    } catch (e) {}
   }
 
+  // Dừng âm thanh đang phát
   static Future<void> stop() async {
     await _player.stop();
+
+    await _player.setReleaseMode(ReleaseMode.release);
   }
 
   static Future<void> dispose() async {

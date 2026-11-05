@@ -9,8 +9,12 @@ class GameBoard extends StatelessWidget {
   final List<int?> board;
   final GameCollection collection;
   final int? selectedIndex;
+
   final Function(int) onTileTap;
   final Function(int, int) onMerge;
+
+  // Được gọi khi kéo ảnh khác cấp vào một ảnh khác
+  final VoidCallback? onInvalidMergeAttempt;
 
   const GameBoard({
     super.key,
@@ -19,6 +23,7 @@ class GameBoard extends StatelessWidget {
     required this.selectedIndex,
     required this.onTileTap,
     required this.onMerge,
+    this.onInvalidMergeAttempt,
   });
 
   @override
@@ -60,16 +65,46 @@ class GameBoard extends StatelessWidget {
 
                 return DragTarget<int>(
                   onWillAcceptWithDetails: (details) {
-                    return GameLogic.canMerge(
+                    final from = details.data;
+
+                    if (from < 0 || from >= board.length || from == index) {
+                      return false;
+                    }
+
+                    return board[from] != null && board[index] != null;
+                  },
+
+                  onAcceptWithDetails: (details) {
+                    final from = details.data;
+
+                    if (from < 0 || from >= board.length || from == index) {
+                      return;
+                    }
+
+                    final isValidMerge = GameLogic.canMerge(
                       board,
-                      details.data,
+                      from,
                       index,
                       collection.maxLevel,
                     );
+
+                    if (isValidMerge) {
+                      // Ghép đúng một cặp ảnh
+                      onMerge(from, index);
+                      return;
+                    }
+
+                    final sourceLevel = board[from];
+                    final targetLevel = board[index];
+
+                    // Trừ thời gian khi hai ảnh khác cấp
+                    if (sourceLevel != null &&
+                        targetLevel != null &&
+                        sourceLevel != targetLevel) {
+                      onInvalidMergeAttempt?.call();
+                    }
                   },
-                  onAcceptWithDetails: (details) {
-                    onMerge(details.data, index);
-                  },
+
                   builder: (context, candidateData, rejectedData) {
                     final isTarget = candidateData.isNotEmpty;
 
@@ -80,6 +115,7 @@ class GameBoard extends StatelessWidget {
                     return Draggable<int>(
                       data: index,
                       maxSimultaneousDrags: 1,
+
                       feedback: Material(
                         color: Colors.transparent,
                         child: SizedBox.square(
@@ -93,7 +129,9 @@ class GameBoard extends StatelessWidget {
                           ),
                         ),
                       ),
+
                       childWhenDragging: Opacity(opacity: 0.25, child: tile),
+
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
                         decoration: BoxDecoration(

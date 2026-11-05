@@ -3,7 +3,6 @@ class GameState {
   final int score;
   final int moves;
 
-  // Tổng số cặp đã ghép trong ván hiện tại
   final int pairsMerged;
 
   final int maxLevelCelebrations;
@@ -11,6 +10,12 @@ class GameState {
   final int maxLevelNoticeShownFor;
 
   final bool isGameOver;
+
+  // Số giây còn lại trong chế độ Thử thách thời gian
+  final int remainingSeconds;
+
+  // Tiến độ nhận thưởng riêng của chế độ Thử thách thời gian
+  final int timedRewardProgress;
 
   const GameState({
     required this.board,
@@ -20,6 +25,8 @@ class GameState {
     this.maxLevelCelebrations = 0,
     this.maxLevelNoticeShownFor = 0,
     this.isGameOver = false,
+    this.remainingSeconds = 14,
+    this.timedRewardProgress = 0,
   });
 
   GameState copyWith({
@@ -30,6 +37,8 @@ class GameState {
     int? maxLevelCelebrations,
     int? maxLevelNoticeShownFor,
     bool? isGameOver,
+    int? remainingSeconds,
+    int? timedRewardProgress,
   }) {
     return GameState(
       board: board ?? this.board,
@@ -40,6 +49,8 @@ class GameState {
       maxLevelNoticeShownFor:
           maxLevelNoticeShownFor ?? this.maxLevelNoticeShownFor,
       isGameOver: isGameOver ?? this.isGameOver,
+      remainingSeconds: remainingSeconds ?? this.remainingSeconds,
+      timedRewardProgress: timedRewardProgress ?? this.timedRewardProgress,
     );
   }
 }

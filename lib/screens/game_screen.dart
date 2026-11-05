@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../services/sound_service.dart';
 
 import '../main.dart';
 import '../models/game_collection.dart';
+import '../models/game_mode.dart';
 import '../models/game_state.dart';
 import '../services/game_storage_service.dart';
 import '../utils/game_logic.dart';
@@ -10,15 +13,22 @@ import '../widgets/game_board.dart';
 
 class GameScreen extends StatefulWidget {
   final GameCollection collection;
+  final GameMode mode;
 
-  const GameScreen({super.key, required this.collection});
+  const GameScreen({super.key, required this.collection, required this.mode});
 
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
+class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   late GameState gameState;
+
+  static const int initialTimeSeconds = 14;
+  Timer? _gameTimer;
+  bool _timerRunning = false;
+  bool _timeExpired = false;
+  bool _maxLevelNoticeShown = false;
 
   int? selectedIndex;
   int highScore = 0;
@@ -27,7 +37,6 @@ class _GameScreenState extends State<GameScreen> {
   int coinProgress = 0;
   int totalPairs = 0;
 
-  // Số sự kiện đạt cấp tối đa đã xử lý trong phiên hiện tại
   int handledMaxLevelCelebrations = 0;
 
   bool dialogShowing = false;
@@ -36,8 +45,11 @@ class _GameScreenState extends State<GameScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
-    gameState = GameLogic.createNewGame(widget.collection.maxLevel);
+    gameState = GameLogic.createNewGame(
+      widget.collection.maxLevel,
+    ).copyWith(remainingSeconds: initialTimeSeconds);
 
     _loadSavedGame();
   }
@@ -47,8 +59,8 @@ class _GameScreenState extends State<GameScreen> {
     final collectionId = widget.collection.id;
 
     final results = await Future.wait([
-      GameStorageService.loadGame(collectionId),
-      GameStorageService.loadHighScore(collectionId),
+      GameStorageService.loadGame(collectionId, mode: widget.mode),
+      GameStorageService.loadHighScore(collectionId, mode: widget.mode),
       GameStorageService.loadTotalCoins(),
       GameStorageService.loadCoinProgress(),
       GameStorageService.loadTotalPairs(),
@@ -63,7 +75,10 @@ class _GameScreenState extends State<GameScreen> {
     if (!mounted) return;
 
     final loadedGame =
-        savedGame ?? GameLogic.createNewGame(widget.collection.maxLevel);
+        savedGame ??
+        GameLogic.createNewGame(
+          widget.collection.maxLevel,
+        ).copyWith(remainingSeconds: initialTimeSeconds);
 
     setState(() {
       gameState = loadedGame;
@@ -74,7 +89,15 @@ class _GameScreenState extends State<GameScreen> {
       isLoading = false;
 
       handledMaxLevelCelebrations = loadedGame.maxLevelCelebrations;
+      _timeExpired =
+          widget.mode == GameMode.timed && loadedGame.remainingSeconds <= 0;
     });
+
+    if (widget.mode == GameMode.timed &&
+        loadedGame.remainingSeconds > 0 &&
+        !loadedGame.isGameOver) {
+      _startTimer();
+    }
 
     _checkMilestones();
   }
@@ -84,9 +107,16 @@ class _GameScreenState extends State<GameScreen> {
     final stateToSave = gameState;
     final collectionId = widget.collection.id;
 
-    await GameStorageService.saveGame(collectionId, stateToSave);
+    await GameStorageService.saveGame(
+      collectionId,
+      stateToSave,
+      mode: widget.mode,
+    );
 
-    final savedHighScore = await GameStorageService.loadHighScore(collectionId);
+    final savedHighScore = await GameStorageService.loadHighScore(
+      collectionId,
+      mode: widget.mode,
+    );
 
     if (!mounted) return;
 
@@ -97,8 +127,120 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
+  void _startTimer() {
+    if (widget.mode != GameMode.timed ||
+        _timerRunning ||
+        isLoading ||
+        gameState.isGameOver ||
+        _timeExpired ||
+        gameState.remainingSeconds <= 0) {
+      return;
+    }
+
+    _gameTimer?.cancel();
+    _timerRunning = true;
+
+    _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || !_timerRunning) {
+        timer.cancel();
+        return;
+      }
+
+      final nextSeconds = gameState.remainingSeconds - 1;
+      if (nextSeconds <= 0) {
+        timer.cancel();
+        _timerRunning = false;
+        setState(() {
+          gameState = gameState.copyWith(remainingSeconds: 0);
+          _timeExpired = true;
+        });
+        _saveCurrentGame();
+        _showGameOverDialog(timeExpired: true);
+        return;
+      }
+
+      setState(() {
+        gameState = gameState.copyWith(remainingSeconds: nextSeconds);
+      });
+      _saveCurrentGame();
+    });
+  }
+
+  void _pauseTimer() {
+    _gameTimer?.cancel();
+    _gameTimer = null;
+    _timerRunning = false;
+    if (!isLoading) _saveCurrentGame();
+  }
+
+  void _handleInvalidMergeAttempt() {
+    if (widget.mode != GameMode.timed ||
+        isLoading ||
+        gameState.isGameOver ||
+        _timeExpired ||
+        dialogShowing) {
+      return;
+    }
+
+    final nextSeconds = gameState.remainingSeconds - 1;
+    if (nextSeconds <= 0) {
+      _gameTimer?.cancel();
+      _timerRunning = false;
+      setState(() {
+        gameState = gameState.copyWith(remainingSeconds: 0);
+        _timeExpired = true;
+      });
+      _saveCurrentGame();
+      _showGameOverDialog(timeExpired: true);
+      return;
+    }
+
+    setState(() {
+      gameState = gameState.copyWith(remainingSeconds: nextSeconds);
+    });
+    _saveCurrentGame();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.mode != GameMode.timed || isLoading) return;
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _pauseTimer();
+    } else if (state == AppLifecycleState.resumed) {
+      _startTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+
+    _gameTimer?.cancel();
+    _gameTimer = null;
+    _timerRunning = false;
+
+    // Chỉ lưu nếu ván vẫn còn thời gian.
+    if (!isLoading &&
+        !(widget.mode == GameMode.timed && gameState.remainingSeconds <= 0)) {
+      GameStorageService.saveGame(
+        widget.collection.id,
+        gameState,
+        mode: widget.mode,
+      );
+    }
+
+    SoundService.stop();
+    super.dispose();
+  }
+
   void _handleTileTap(int index) {
-    if (isLoading || gameState.isGameOver || dialogShowing) return;
+    if (isLoading || gameState.isGameOver || _timeExpired || dialogShowing) {
+      return;
+    }
 
     final level = gameState.board[index];
 
@@ -131,6 +273,10 @@ class _GameScreenState extends State<GameScreen> {
     )) {
       _mergeTiles(selectedIndex!, index);
     } else {
+      final firstLevel = gameState.board[selectedIndex!];
+      if (firstLevel != null && firstLevel != level) {
+        _handleInvalidMergeAttempt();
+      }
       setState(() {
         selectedIndex = index;
       });
@@ -138,7 +284,9 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _mergeTiles(int from, int to) {
-    if (isLoading || gameState.isGameOver || dialogShowing) return;
+    if (isLoading || gameState.isGameOver || _timeExpired || dialogShowing) {
+      return;
+    }
 
     // Lưu số cặp đã ghép trước lượt này
     final previousPairs = gameState.pairsMerged;
@@ -163,7 +311,11 @@ class _GameScreenState extends State<GameScreen> {
 
     // Cộng xu theo tổng số cặp thực tế đã ghép
     if (newlyMergedPairs > 0) {
-      _recordMergeRewards(newlyMergedPairs);
+      if (widget.mode == GameMode.free) {
+        _recordMergeRewards(newlyMergedPairs);
+      } else {
+        _recordTimedMergeRewards(newlyMergedPairs);
+      }
     }
 
     _checkMilestones();
@@ -197,13 +349,48 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
+  Future<void> _recordTimedMergeRewards(int pairs) async {
+    // API này ghi nhận từng cặp và chỉ cộng 10 xu tại mỗi mốc 5 cặp
+    final earnedCoins = await GameStorageService.recordTimedMergedPair(
+      pairs: pairs,
+      reward:
+          gameState.timedRewardProgress > 0 &&
+          gameState.timedRewardProgress % 5 == 0,
+    );
+
+    final results = await Future.wait([
+      GameStorageService.loadTotalCoins(),
+      GameStorageService.loadTotalPairs(),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      totalCoins = results[0];
+      totalPairs = results[1];
+    });
+
+    if (earnedCoins > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🎉 Bạn nhận được $earnedCoins xu!'),
+          backgroundColor: AppColors.butterDark,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   void _checkMilestones() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || isLoading || dialogShowing) return;
 
-      if (gameState.maxLevelCelebrations > handledMaxLevelCelebrations) {
+      if (widget.mode == GameMode.timed && _timeExpired) {
+        _showGameOverDialog(timeExpired: true);
+      } else if (widget.mode == GameMode.free &&
+          !_maxLevelNoticeShown &&
+          gameState.maxLevelCelebrations > handledMaxLevelCelebrations) {
         handledMaxLevelCelebrations = gameState.maxLevelCelebrations;
-
+        _maxLevelNoticeShown = true;
         _showMaxLevelDialog();
       } else if (gameState.isGameOver) {
         _showGameOverDialog();
@@ -217,7 +404,10 @@ class _GameScreenState extends State<GameScreen> {
     dialogShowing = true;
 
     // Phát nhạc chiến thắng ngẫu nhiên
-    SoundService.playRandomVictorySound();
+    SoundService.playRandomVictorySound(
+      widget.collection.victorySoundGroup,
+      loop: true,
+    );
 
     await showDialog<void>(
       context: context,
@@ -340,7 +530,7 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
-  Future<void> _showGameOverDialog() async {
+  Future<void> _showGameOverDialog({bool timeExpired = false}) async {
     if (dialogShowing || !mounted) return;
 
     dialogShowing = true;
@@ -354,16 +544,18 @@ class _GameScreenState extends State<GameScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
-          title: const Text(
-            'Hết nước đi rồi!',
+          title: Text(
+            timeExpired ? 'HẾT THỜI GIAN!' : 'Hết nước đi rồi!',
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: AppColors.text,
               fontWeight: FontWeight.bold,
             ),
           ),
           content: Text(
-            'Điểm của bạn: ${gameState.score}',
+            timeExpired
+                ? 'Thời gian đã hết!\nĐiểm của bạn: ${gameState.score}'
+                : 'Điểm của bạn: ${gameState.score}',
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.text),
           ),
@@ -381,7 +573,17 @@ class _GameScreenState extends State<GameScreen> {
               child: const Text('Chơi lại'),
             ),
             TextButton(
-              onPressed: () {
+              onPressed: () async {
+                // Nếu hết giờ, xóa ván đã kết thúc để lần sau chơi mới
+                if (timeExpired) {
+                  await GameStorageService.clearGame(
+                    widget.collection.id,
+                    mode: widget.mode,
+                  );
+                }
+
+                if (!mounted) return;
+
                 Navigator.pop(dialogContext);
                 Navigator.pop(context);
               },
@@ -400,14 +602,23 @@ class _GameScreenState extends State<GameScreen> {
 
   // Chơi lại nhưng không xóa điểm cao nhất và số xu
   void _restartGame() {
+    _gameTimer?.cancel();
+    _gameTimer = null;
+    _timerRunning = false;
+
     setState(() {
-      gameState = GameLogic.createNewGame(widget.collection.maxLevel);
+      gameState = GameLogic.createNewGame(
+        widget.collection.maxLevel,
+      ).copyWith(remainingSeconds: initialTimeSeconds);
       selectedIndex = null;
       handledMaxLevelCelebrations = 0;
+      _maxLevelNoticeShown = false;
+      _timeExpired = false;
     });
 
     SoundService.stop();
     _saveCurrentGame();
+    if (widget.mode == GameMode.timed) _startTimer();
   }
 
   // Thẻ thống kê
@@ -460,6 +671,20 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildCoinProgressCard({bool compact = false}) {
+    final isTimed = widget.mode == GameMode.timed;
+
+    final requiredPairs = isTimed
+        ? GameStorageService.timedPairsPerReward
+        : GameStorageService.pairsPerReward;
+
+    final rewardCoins = isTimed
+        ? GameStorageService.timedCoinsPerReward
+        : GameStorageService.coinsPerReward;
+
+    final currentProgress = isTimed
+        ? gameState.timedRewardProgress % requiredPairs
+        : coinProgress;
+
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(compact ? 9 : 13),
@@ -498,13 +723,11 @@ class _GameScreenState extends State<GameScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 8),
-
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: LinearProgressIndicator(
-              value: coinProgress / GameStorageService.pairsPerReward,
+              value: (currentProgress / requiredPairs).clamp(0.0, 1.0),
               minHeight: 9,
               backgroundColor: AppColors.butterLight,
               valueColor: const AlwaysStoppedAnimation<Color>(
@@ -512,12 +735,10 @@ class _GameScreenState extends State<GameScreen> {
               ),
             ),
           ),
-
           const SizedBox(height: 6),
-
           Text(
-            '$coinProgress/${GameStorageService.pairsPerReward} cặp ghép '
-            '• Đủ 14 cặp nhận ${GameStorageService.coinsPerReward} xu',
+            '$currentProgress/$requiredPairs cặp ghép '
+            '• Đủ $requiredPairs cặp nhận $rewardCoins xu',
             style: TextStyle(
               color: AppColors.text,
               fontSize: compact ? 10 : 12,
@@ -563,7 +784,6 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  // Giao diện rộng: thông tin bên trái, bàn chơi bên phải
   Widget _buildDesktopLayout(double width, double height) {
     const padding = 16.0;
     const spacing = 20.0;
@@ -586,89 +806,99 @@ class _GameScreenState extends State<GameScreen> {
         children: [
           SizedBox(
             width: leftWidth,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    'Ghép hai ảnh giống nhau!',
-                    style: TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.text,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Ghép hai ảnh giống nhau!',
+                      style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.text,
+                      ),
                     ),
                   ),
-                ),
 
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                _desktopStatCard(
-                  'Điểm',
-                  '${gameState.score}',
-                  Icons.star_rounded,
-                ),
-
-                const SizedBox(height: 8),
-
-                _desktopStatCard(
-                  'Lượt chơi',
-                  '${gameState.moves}',
-                  Icons.touch_app_rounded,
-                ),
-
-                const SizedBox(height: 8),
-
-                _desktopStatCard(
-                  'Cấp tối đa',
-                  '${widget.collection.maxLevel}',
-                  Icons.emoji_events_rounded,
-                ),
-
-                const SizedBox(height: 14),
-
-                Text(
-                  '🏆 Kỷ lục: $highScore điểm',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: AppColors.text,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                  _desktopStatCard(
+                    'Điểm',
+                    '${gameState.score}',
+                    Icons.star_rounded,
                   ),
-                ),
 
-                const SizedBox(height: 12),
+                  const SizedBox(height: 8),
 
-                _buildCoinProgressCard(),
-
-                const SizedBox(height: 12),
-
-                const Text(
-                  'Tìm và kéo hai ảnh giống nhau '
-                  'hoặc chạm lần lượt hai ô để ghép.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.text,
-                    fontSize: 13,
-                    height: 1.4,
+                  _desktopStatCard(
+                    'Lượt chơi',
+                    '${gameState.moves}',
+                    Icons.touch_app_rounded,
                   ),
-                ),
 
-                const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  if (widget.mode == GameMode.timed) ...[
+                    const SizedBox(height: 8),
+                    _desktopStatCard(
+                      'Thời gian',
+                      '${gameState.remainingSeconds}s',
+                      Icons.timer_rounded,
+                    ),
+                  ],
 
-                OutlinedButton.icon(
-                  onPressed: _restartGame,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Chơi lại từ đầu'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.text,
-                    side: const BorderSide(color: AppColors.butterDark),
-                    visualDensity: VisualDensity.compact,
+                  _desktopStatCard(
+                    'Cấp tối đa',
+                    '${widget.collection.maxLevel}',
+                    Icons.emoji_events_rounded,
                   ),
-                ),
-              ],
+
+                  const SizedBox(height: 14),
+
+                  Text(
+                    '🏆 Kỷ lục: $highScore điểm',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.text,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  _buildCoinProgressCard(),
+
+                  const SizedBox(height: 12),
+
+                  const Text(
+                    'Tìm và kéo hai ảnh giống nhau '
+                    'hoặc chạm lần lượt hai ô để ghép.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.text,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  OutlinedButton.icon(
+                    onPressed: _restartGame,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Chơi lại từ đầu'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.text,
+                      side: const BorderSide(color: AppColors.butterDark),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 
@@ -684,6 +914,7 @@ class _GameScreenState extends State<GameScreen> {
                   selectedIndex: selectedIndex,
                   onTileTap: _handleTileTap,
                   onMerge: _mergeTiles,
+                  onInvalidMergeAttempt: _handleInvalidMergeAttempt,
                 ),
               ),
             ),
@@ -693,7 +924,6 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  // Giao diện điện thoại thích ứng theo cả chiều rộng và chiều cao
   Widget _buildCompactLayout(double width, double height) {
     const horizontalPadding = 12.0;
 
@@ -729,6 +959,15 @@ class _GameScreenState extends State<GameScreen> {
                     Icons.touch_app_rounded,
                     compact: true,
                   ),
+                  if (widget.mode == GameMode.timed) ...[
+                    const SizedBox(width: 7),
+                    _statCard(
+                      'Thời gian',
+                      '${gameState.remainingSeconds}s',
+                      Icons.timer_rounded,
+                      compact: true,
+                    ),
+                  ],
                   const SizedBox(width: 7),
                   _statCard(
                     'Cấp tối đa',
@@ -781,6 +1020,7 @@ class _GameScreenState extends State<GameScreen> {
                   selectedIndex: selectedIndex,
                   onTileTap: _handleTileTap,
                   onMerge: _mergeTiles,
+                  onInvalidMergeAttempt: _handleInvalidMergeAttempt,
                 ),
               ),
 
@@ -825,7 +1065,7 @@ class _GameScreenState extends State<GameScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.collection.name,
+          '${widget.collection.name} • ${widget.mode.displayName}',
           style: const TextStyle(
             color: AppColors.text,
             fontWeight: FontWeight.bold,
