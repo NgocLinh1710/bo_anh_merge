@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="vi">
 <head>
   <!--
     If you are serving your web app in a path other than the root, change the
@@ -17,6 +17,7 @@
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="A new Flutter project.">
 
@@ -31,8 +32,24 @@
 
   <title>bo_anh</title>
   <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="music.css">
 </head>
 <body>
+  <main id="game" aria-label="BơAnh Alliance"></main>
+  <section id="music" aria-label="Nhạc nền SoundCloud">
+    <div class="music-toolbar">
+      <button id="music-toggle" type="button" aria-label="Bật nhạc" title="Bật nhạc" aria-pressed="false">🔇</button>
+    </div>
+    <div id="music-panel" aria-hidden="true" inert>
+      <div class="music-options">
+        <label><input id="music-repeat" type="checkbox" checked> Lặp playlist</label>
+        <a href="https://soundcloud.com/s-ng-mai-nguy-n-906756930/sets/14-casper" target="_blank" rel="noopener noreferrer">Mở trên SoundCloud</a>
+      </div>
+      <p id="music-status" role="status" aria-live="polite"></p>
+      <div id="music-player"></div>
+    </div>
+  </section>
+  <script src="music.js" defer></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
