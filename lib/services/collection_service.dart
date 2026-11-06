@@ -5,7 +5,7 @@ import '../models/game_mode.dart';
 
 class CollectionService {
   // Những ver free
-  static const Set<String> freeCollections = {'collection_1', 'collection_2'};
+  static const Set<String> freeCollections = {'collection_2'};
 
   // Giá mở khóa riêng cho từng ver
   static const Map<String, int> collectionPrices = {
@@ -17,7 +17,6 @@ class CollectionService {
 
   // Tên hiển thị của từng ver
   static const Map<String, String> collectionNames = {
-    'collection_1': 'Bơ Lavie',
     'collection_2': 'Bơ sticker',
     'collection_3': 'Bơ chinh',
     'collection_4': 'Bơ bad',
@@ -27,7 +26,6 @@ class CollectionService {
 
   // Cấu hình các chế độ được phép chơi
   static const Map<String, List<GameMode>> collectionModes = {
-    'collection_1': [GameMode.free, GameMode.timed],
     'collection_2': [GameMode.free, GameMode.timed],
     'collection_3': [GameMode.free, GameMode.timed],
     'collection_4': [GameMode.free, GameMode.timed],
@@ -37,7 +35,6 @@ class CollectionService {
 
   // Cấu hình nhóm âm thanh chiến thắng
   static const Map<String, String> collectionSoundGroups = {
-    'collection_1': 'sound_1',
     'collection_2': 'sound_1',
     'collection_3': 'sound_1',
     'collection_4': 'sound_1',

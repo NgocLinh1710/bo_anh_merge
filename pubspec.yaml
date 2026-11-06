@@ -65,7 +65,6 @@ flutter:
   #   - images/a_dot_ham.jpeg
 
   assets:
-   - assets/collections/collection_1/
    - assets/collections/collection_2/
    - assets/collections/collection_3/
    - assets/collections/collection_4/
