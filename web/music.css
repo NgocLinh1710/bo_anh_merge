@@ -6,6 +6,11 @@ body { display: flex; flex-direction: column; height: 100dvh; background: #f7f9e
 #music { flex: none; display: flex; justify-content: flex-end; align-items: center; padding: 4px max(12px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
 #music-toggle { flex: none; border: 0; border-radius: 50%; width: 48px; height: 48px; background: #465f30; color: white; font-size: 22px; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 #music-toggle:focus-visible { outline: 3px solid #83ad59; outline-offset: 3px; }
+.music-toolbar { display: flex; align-items: center; gap: 12px; max-width: 100%; }
+.music-volume-control { display: flex; align-items: center; gap: 8px; min-width: 0; color: #465f30; font: 14px/1.2 system-ui, sans-serif; }
+#music-volume { width: clamp(64px, 20vw, 120px); min-width: 0; margin: 0; accent-color: #465f30; cursor: pointer; height: 36px; }
+#music-volume:focus-visible { outline: 2px solid #83ad59; outline-offset: 2px; border-radius: 4px; }
+#music-volume-value { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
 /* Keep playback mounted without showing a panel or consuming game space. */
 #music-panel { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); pointer-events: none; }
 #music-player iframe { width: 100%; height: 166px; border: 0; }

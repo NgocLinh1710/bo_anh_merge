@@ -2,6 +2,7 @@ class GameState {
   final List<int?> board;
   final int score;
   final int moves;
+  final int highestDiscoveredLevel;
 
   final int pairsMerged;
 
@@ -21,6 +22,7 @@ class GameState {
     required this.board,
     this.score = 0,
     this.moves = 0,
+    this.highestDiscoveredLevel = 1,
     this.pairsMerged = 0,
     this.maxLevelCelebrations = 0,
     this.maxLevelNoticeShownFor = 0,
@@ -33,6 +35,7 @@ class GameState {
     List<int?>? board,
     int? score,
     int? moves,
+    int? highestDiscoveredLevel,
     int? pairsMerged,
     int? maxLevelCelebrations,
     int? maxLevelNoticeShownFor,
@@ -44,6 +47,8 @@ class GameState {
       board: board ?? this.board,
       score: score ?? this.score,
       moves: moves ?? this.moves,
+      highestDiscoveredLevel:
+          highestDiscoveredLevel ?? this.highestDiscoveredLevel,
       pairsMerged: pairsMerged ?? this.pairsMerged,
       maxLevelCelebrations: maxLevelCelebrations ?? this.maxLevelCelebrations,
       maxLevelNoticeShownFor:

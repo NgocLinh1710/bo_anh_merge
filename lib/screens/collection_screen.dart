@@ -163,7 +163,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
                     final description = isFreeMode
                         ? 'Chơi thoải mái, không giới hạn thời gian.\n'
-                              'Nhận 11 xu sau mỗi 14 cặp ghép thành công.'
+                              'Nhận ${GameStorageService.coinsPerReward(collection.id)} xu sau mỗi 14 cặp ghép thành công.'
                         : 'Bắt đầu với 14 giây.\n'
                               'Mỗi lần ghép sai bị trừ 1 giây.\n'
                               'Nhận 10 xu sau mỗi 5 cặp ghép thành công.';
@@ -652,6 +652,8 @@ class _CollectionScreenState extends State<CollectionScreen> {
                     : constraints.maxWidth >= 700
                     ? 3
                     : 2;
+                final cardWidth =
+                    (constraints.maxWidth - 40 - (columns - 1) * 16) / columns;
 
                 return GridView.builder(
                   padding: const EdgeInsets.all(20),
@@ -660,7 +662,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
                     crossAxisCount: columns,
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 16,
-                    childAspectRatio: 0.82,
+                    mainAxisExtent: (cardWidth * 1.35).clamp(330.0, 440.0),
                   ),
                   itemBuilder: (context, index) {
                     final collection = collections[index];
@@ -744,53 +746,89 @@ class _CollectionCard extends StatelessWidget {
                       if (!isUnlocked) ...[
                         Container(color: Colors.black.withValues(alpha: 0.38)),
 
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.lock_rounded,
-                              color: Colors.white,
-                              size: 42,
-                            ),
-
-                            const SizedBox(height: 6),
-
-                            const Text(
-                              'BỊ KHÓA',
-                              style: TextStyle(
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 78),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.lock_rounded,
                                 color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.2,
+                                size: 42,
                               ),
-                            ),
 
-                            if (price != null) ...[
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 6),
 
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(
-                                    Icons.monetization_on_rounded,
-                                    color: Colors.orange,
-                                    size: 18,
-                                  ),
+                              const Text(
+                                'BỊ KHÓA',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
 
-                                  const SizedBox(width: 4),
+                              if (price != null) ...[
+                                const SizedBox(height: 8),
 
-                                  Text(
-                                    '$price xu',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.monetization_on_rounded,
+                                      color: Colors.orange,
+                                      size: 18,
                                     ),
-                                  ),
-                                ],
-                              ),
+
+                                    const SizedBox(width: 4),
+
+                                    Text(
+                                      '$price xu',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ],
+                      if (collection.description.isNotEmpty)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.60),
+                                  Colors.black.withValues(alpha: 0.88),
+                                ],
+                              ),
+                            ),
+                            child: Text(
+                              '"${collection.description}"',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                height: 1.35,
+                                fontStyle: FontStyle.italic,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

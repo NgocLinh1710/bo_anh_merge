@@ -6,6 +6,32 @@
   const container = document.getElementById('music-player');
   const status = document.getElementById('music-status');
   const repeat = document.getElementById('music-repeat');
+  const volumeControl = document.getElementById('music-volume');
+  const volumeValue = document.getElementById('music-volume-value');
+  const volumeKey = 'music-volume';
+  let volume = 30;
+  try {
+    const saved = window.localStorage.getItem(volumeKey);
+    const parsed = Number(saved);
+    if (saved !== null && saved.trim() !== '' && Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) {
+      volume = Math.round(parsed);
+    }
+  } catch (_) { /* Storage may be unavailable; keep the default volume. */ }
+  function updateVolume() {
+    volumeControl.value = String(volume);
+    volumeControl.setAttribute('aria-valuetext', `${volume}%`);
+    volumeValue.textContent = `${volume}%`;
+  }
+  updateVolume();
+  volumeControl.addEventListener('input', () => {
+    const value = Number(volumeControl.value);
+    if (!Number.isFinite(value)) return;
+    volume = Math.max(0, Math.min(100, Math.round(value)));
+    updateVolume();
+    if (widget && ready && !failed) widget.setVolume(volume);
+    try { window.localStorage.setItem(volumeKey, String(volume)); }
+    catch (_) { /* Volume still works when storage is blocked. */ }
+  });
   let widget, apiPromise, readyTimeout;
   let generation = 0;
   let ready = false, playing = false, enabled = true, failed = false;
@@ -15,7 +41,7 @@
   // in the game, without intercepting that interaction or undoing user mute.
   function tryAutoplayFromGesture(event) {
     if (!event.isTrusted || !awaitingAutoplay || !enabled || !ready || failed || playing) return;
-    if (event.composedPath().includes(toggle)) return;
+    if (event.composedPath().includes(toggle) || event.composedPath().includes(volumeControl)) return;
     if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
     widget.play();
   }
@@ -84,6 +110,7 @@
         clearTimeout(readyTimeout);
         ready = true;
         failed = false;
+        widget.setVolume(volume);
         status.textContent = enabled
           ? 'Nếu chưa nghe thấy nhạc, bấm nút loa để bật.'
           : 'Nhạc đang tắt.';

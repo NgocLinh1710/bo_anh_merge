@@ -3,7 +3,62 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function setup({ apiAvailable = true } = {}) {
+test('volume defaults to 30%, updates live, and survives a new page session including zero', async () => {
+  const storage = new Map();
+  const app = setup({ storage });
+  await Promise.resolve();
+  app.events.ready();
+  assert.deepEqual(app.volumes, [30]);
+  const control = app.elements.get('music-volume');
+  for (const value of ['65', '100', '0']) {
+    control.value = value;
+    control.listeners.input();
+    assert.equal(app.volumes.at(-1), Number(value));
+    assert.equal(app.elements.get('music-volume-value').textContent, `${value}%`);
+    assert.equal(control.attributes['aria-valuetext'], `${value}%`);
+    const reopened = setup({ storage });
+    await Promise.resolve();
+    reopened.events.ready();
+    assert.deepEqual(reopened.volumes, [Number(value)]);
+  }
+});
+
+test('volume changed before readiness is applied on readiness without starting playback on adjustment', async () => {
+  const app = setup();
+  const control = app.elements.get('music-volume');
+  control.value = '45';
+  control.listeners.input();
+  assert.deepEqual(app.volumes, []);
+  await Promise.resolve();
+  app.events.ready();
+  assert.deepEqual(app.volumes, [45]);
+  app.events.play();
+  await app.click();
+  const stoppedCalls = app.calls.length;
+  control.value = '20';
+  control.listeners.input();
+  app.gesture('pointerdown', { composedPath: () => [control] });
+  assert.equal(app.calls.length, stoppedCalls);
+  assert.equal(app.volumes.at(-1), 20);
+});
+
+test('invalid saved volume and unavailable storage keep working with the default', async () => {
+  for (const value of ['', 'invalid', '-1', '101', 'Infinity']) {
+    const app = setup({ storage: new Map([['music-volume', value]]) });
+    await Promise.resolve();
+    app.events.ready();
+    assert.deepEqual(app.volumes, [30]);
+  }
+  const app = setup({ storageBlocked: true });
+  await Promise.resolve();
+  app.events.ready();
+  const control = app.elements.get('music-volume');
+  control.value = '75';
+  assert.doesNotThrow(() => control.listeners.input());
+  assert.deepEqual(app.volumes, [30, 75]);
+});
+
+function setup({ apiAvailable = true, storage = new Map(), storageBlocked = false } = {}) {
   const elements = new Map();
   const element = () => ({
     hidden: false, checked: true, children: [], listeners: {}, attributes: {},
@@ -13,14 +68,16 @@ function setup({ apiAvailable = true } = {}) {
     appendChild(child) { this.children.push(child); },
     remove() {},
   });
-  for (const id of ['music-toggle', 'music-panel', 'music-player', 'music-status', 'music-repeat']) {
+  for (const id of ['music-toggle', 'music-panel', 'music-player', 'music-status', 'music-repeat', 'music-volume', 'music-volume-value']) {
     elements.set(id, element());
   }
   elements.get('music-panel').hidden = true;
   const events = {};
   const calls = [];
+  const volumes = [];
   let index = 0;
   const widget = {
+    setVolume(value) { volumes.push(value); },
     bind(name, fn) { events[name] = fn; },
     getSounds(fn) { fn(Array(15).fill({})); },
     getCurrentSoundIndex(fn) { fn(index); },
@@ -32,14 +89,24 @@ function setup({ apiAvailable = true } = {}) {
   Widget.Events = { READY: 'ready', ERROR: 'error', FINISH: 'finish', PLAY: 'play', PAUSE: 'pause' };
   const head = element();
   const gestures = {};
+  const localStorage = {
+    getItem(key) {
+      if (storageBlocked) throw new Error('Storage blocked');
+      return storage.has(key) ? storage.get(key) : null;
+    },
+    setItem(key, value) {
+      if (storageBlocked) throw new Error('Storage blocked');
+      storage.set(key, value);
+    },
+  };
   const context = {
     document: { getElementById: (id) => elements.get(id), createElement: element, head,
       addEventListener(name, fn) { gestures[name] = fn; } },
-    window: apiAvailable ? { SC: { Widget } } : {},
+    window: apiAvailable ? { SC: { Widget }, localStorage } : { localStorage },
     URLSearchParams, setTimeout: () => 1, clearTimeout() {},
   };
   vm.runInNewContext(fs.readFileSync('web/music.js', 'utf8'), context);
-  return { elements, events, calls, head, setIndex(value) { index = value; },
+  return { elements, events, calls, volumes, head, setIndex(value) { index = value; },
     gesture(type, overrides = {}) {
       gestures[type]({ type, isTrusted: true, composedPath: () => [], ...overrides });
     },

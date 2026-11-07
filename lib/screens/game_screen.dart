@@ -7,6 +7,7 @@ import '../main.dart';
 import '../models/game_collection.dart';
 import '../models/game_mode.dart';
 import '../models/game_state.dart';
+import '../models/spawn_config.dart';
 import '../services/game_storage_service.dart';
 import '../utils/game_logic.dart';
 import '../widgets/game_board.dart';
@@ -42,6 +43,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool dialogShowing = false;
   bool isLoading = true;
 
+  SpawnConfig? get _spawnConfig => widget.mode == GameMode.free
+      ? SpawnConfig.collections[widget.collection.id] ?? const SpawnConfig()
+      : null;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +54,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
     gameState = GameLogic.createNewGame(
       widget.collection.maxLevel,
+      spawnConfig: _spawnConfig,
     ).copyWith(remainingSeconds: initialTimeSeconds);
 
     _loadSavedGame();
@@ -78,6 +84,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         savedGame ??
         GameLogic.createNewGame(
           widget.collection.maxLevel,
+          spawnConfig: _spawnConfig,
         ).copyWith(remainingSeconds: initialTimeSeconds);
 
     setState(() {
@@ -296,11 +303,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       from,
       to,
       widget.collection.maxLevel,
+      spawnConfig: _spawnConfig,
     );
 
     if (identical(nextState, gameState)) return;
 
     final newlyMergedPairs = nextState.pairsMerged - previousPairs;
+    final createdFinalImage =
+        nextState.maxLevelCelebrations > gameState.maxLevelCelebrations;
+    if (createdFinalImage) {
+      unawaited(SoundService.playSecret(widget.collection.id));
+    }
 
     setState(() {
       gameState = nextState;
@@ -312,17 +325,29 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     // Cộng xu theo tổng số cặp thực tế đã ghép
     if (newlyMergedPairs > 0) {
       if (widget.mode == GameMode.free) {
-        _recordMergeRewards(newlyMergedPairs);
+        _recordMergeRewards(
+          newlyMergedPairs,
+          createdFinalImage: createdFinalImage,
+        );
       } else {
-        _recordTimedMergeRewards(newlyMergedPairs);
+        _recordTimedMergeRewards(
+          newlyMergedPairs,
+          createdFinalImage: createdFinalImage,
+        );
       }
     }
 
     _checkMilestones();
   }
 
-  Future<void> _recordMergeRewards(int pairs) async {
-    final earnedCoins = await GameStorageService.recordMergedPairs(pairs);
+  Future<void> _recordMergeRewards(
+    int pairs, {
+    required bool createdFinalImage,
+  }) async {
+    final earnedCoins = await GameStorageService.recordMergedPairs(
+      pairs,
+      collectionId: widget.collection.id,
+    );
 
     final results = await Future.wait([
       GameStorageService.loadTotalCoins(),
@@ -339,6 +364,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
 
     if (earnedCoins > 0) {
+      if (!createdFinalImage) unawaited(SoundService.playReward());
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('🎉 Bạn nhận được $earnedCoins xu!'),
@@ -349,7 +375,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _recordTimedMergeRewards(int pairs) async {
+  Future<void> _recordTimedMergeRewards(
+    int pairs, {
+    required bool createdFinalImage,
+  }) async {
     // API này ghi nhận từng cặp và chỉ cộng 10 xu tại mỗi mốc 5 cặp
     final earnedCoins = await GameStorageService.recordTimedMergedPair(
       pairs: pairs,
@@ -370,6 +399,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
 
     if (earnedCoins > 0) {
+      if (!createdFinalImage) unawaited(SoundService.playReward());
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('🎉 Bạn nhận được $earnedCoins xu!'),
@@ -402,12 +432,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     if (dialogShowing || !mounted) return;
 
     dialogShowing = true;
-
-    // Phát nhạc chiến thắng ngẫu nhiên
-    SoundService.playRandomVictorySound(
-      widget.collection.victorySoundGroup,
-      loop: true,
-    );
 
     await showDialog<void>(
       context: context,
@@ -582,7 +606,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   );
                 }
 
-                if (!mounted) return;
+                if (!mounted || !dialogContext.mounted) return;
 
                 Navigator.pop(dialogContext);
                 Navigator.pop(context);
@@ -609,6 +633,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     setState(() {
       gameState = GameLogic.createNewGame(
         widget.collection.maxLevel,
+        spawnConfig: _spawnConfig,
       ).copyWith(remainingSeconds: initialTimeSeconds);
       selectedIndex = null;
       handledMaxLevelCelebrations = 0;
@@ -679,7 +704,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
     final rewardCoins = isTimed
         ? GameStorageService.timedCoinsPerReward
-        : GameStorageService.coinsPerReward;
+        : GameStorageService.coinsPerReward(widget.collection.id);
 
     final currentProgress = isTimed
         ? gameState.timedRewardProgress % requiredPairs

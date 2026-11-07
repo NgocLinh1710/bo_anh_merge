@@ -38,6 +38,11 @@
   <main id="game" aria-label="BơAnh Alliance"></main>
   <section id="music" aria-label="Nhạc nền SoundCloud">
     <div class="music-toolbar">
+      <label class="music-volume-control" for="music-volume">
+        <span>Âm lượng</span>
+        <input id="music-volume" type="range" min="0" max="100" step="1" value="30" aria-valuetext="30%">
+        <output id="music-volume-value" for="music-volume">30%</output>
+      </label>
       <button id="music-toggle" type="button" aria-label="Bật nhạc" title="Bật nhạc" aria-pressed="false">🔇</button>
     </div>
     <div id="music-panel" aria-hidden="true" inert>
