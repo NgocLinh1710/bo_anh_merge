@@ -1,5 +1,30 @@
 # bo_anh
 
+- Chơi tự do dùng cấu hình riêng từng ver trong `lib/models/spawn_config.dart`.
+  Từ cấp 5, ảnh sinh ra tăng theo cấp cao nhất đã khám phá trong ván;
+  35% cơ hội hỗ trợ ảnh cấp thấp còn sót trên bàn. Các ảnh sau nhóm khởi đầu
+  1–3 và ảnh cuối vẫn phải mở bằng ghép. Chế độ thời gian giữ cách sinh cũ.
+  Cấp đã khám phá được lưu cùng ván; ván cũ tự suy ra từ ảnh trên bàn.
+- Chạy `dart run tool/simulate_balance.dart` để mô phỏng 500 ván/ver cho
+  từng chiến lược ghép thấp trước, cao trước và chọn ngẫu nhiên. Mốc cân bằng
+  dùng trung vị ghép thấp trước: ver 1 khoảng 120–150, ver 6 khoảng 250–320
+  lượt tới ảnh cuối. Đây không phải số lượt cố định cho mọi người chơi.
+
+- Ảnh trong mỗi collection được xếp theo số đầu tên file (1, 2, 10...),
+  kể cả khi thiếu số hoặc có phần tên phía sau. Cấp độ vẫn liên tục từ 1;
+  ảnh có số lớn nhất là cấp cuối. Ván đã lưu giữ cấp độ số, vì vậy ảnh tương
+  ứng có thể thay đổi khi chuyển từ thứ tự tên cũ sang thứ tự số mới.
+- Ghép thường chưa nhận xu không phát hiệu ứng. Khi nhận xu, phát ngẫu nhiên
+  một MP3 trong `assets/sounds/sound_normal/` một lần. Ghép ra ảnh cuối phát
+  `assets/sounds/sound_secret/Sound N.mp3` theo collection N (1–6) một lần,
+  kể cả khi lượt đó đồng thời nhận xu. Sound thường không ngắt secret;
+  nhạc nền SoundCloud được điều khiển riêng.
+
+- Thanh âm lượng cạnh nút loa điều chỉnh nhạc nền từ 0–100%, mặc định 30%.
+  Mức đã chọn được lưu trên trình duyệt cho lần mở sau; nếu trình duyệt chặn
+  lưu trữ, vẫn chỉnh được âm lượng trong phiên hiện tại. Mức 0% làm nhạc im tiếng;
+  nút loa vẫn dùng để tạm dừng/phát tiếp.
+
 ## Nhạc nền SoundCloud (web)
 
 - Chạy `flutter pub get`, sau đó `flutter run -d chrome`.

@@ -3,6 +3,7 @@ import 'game_mode.dart';
 class GameCollection {
   final String id;
   final String name;
+  final String description;
   final int maxLevel;
 
   final Set<int> availableLevels;
@@ -12,17 +13,14 @@ class GameCollection {
   // Các chế độ được phép chơi trong ver
   final List<GameMode> availableModes;
 
-  // Nhóm âm thanh chiến thắng của ver
-  final String victorySoundGroup;
-
   GameCollection({
     required this.id,
     required this.name,
+    this.description = '',
     required this.maxLevel,
     required this.availableLevels,
     this.imagePaths = const {},
     this.availableModes = const [GameMode.free],
-    this.victorySoundGroup = 'sound_1',
   });
 
   List<int> get sortedLevels {

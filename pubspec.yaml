@@ -65,14 +65,15 @@ flutter:
   #   - images/a_dot_ham.jpeg
 
   assets:
+   - assets/collections/collection_1/
    - assets/collections/collection_2/
    - assets/collections/collection_3/
    - assets/collections/collection_4/
    - assets/collections/collection_5/
-   - assets/collections/collection_8/
+   - assets/collections/collection_6/
 
-   - assets/sounds/sound_1/
-   - assets/sounds/sound_2/
+   - assets/sounds/sound_normal/
+   - assets/sounds/sound_secret/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

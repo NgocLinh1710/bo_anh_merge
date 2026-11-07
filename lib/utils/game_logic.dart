@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../models/game_state.dart';
+import '../models/spawn_config.dart';
 
 class GameLogic {
   static const int boardSize = 3;
@@ -12,11 +13,20 @@ class GameLogic {
   static const int initialTimeSeconds = 14;
 
   // Tạo bàn chơi ban đầu với đủ 9 ảnh
-  static GameState createNewGame(int maxLevel) {
+  static GameState createNewGame(
+    int maxLevel, {
+    Random? random,
+    SpawnConfig? spawnConfig,
+  }) {
+    final rng = random ?? _random;
     final board = List<int?>.filled(boardCapacity, null);
 
     for (int i = 0; i < boardCapacity; i++) {
-      board[i] = _randomStartLevel(maxLevel);
+      board[i] = _randomStartLevel(
+        maxLevel,
+        rng,
+        allowFinal: spawnConfig == null,
+      );
     }
 
     // Bảo đảm có ít nhất một cặp ghép được
@@ -26,10 +36,10 @@ class GameLogic {
       ];
 
       final guaranteedLevel =
-          possibleLevels[_random.nextInt(possibleLevels.length)];
+          possibleLevels[rng.nextInt(possibleLevels.length)];
 
       final positions = List<int>.generate(boardCapacity, (i) => i)
-        ..shuffle(_random);
+        ..shuffle(rng);
 
       board[positions[0]] = guaranteedLevel;
       board[positions[1]] = guaranteedLevel;
@@ -37,6 +47,7 @@ class GameLogic {
 
     return GameState(
       board: board,
+      highestDiscoveredLevel: board.whereType<int>().reduce(max),
       score: 0,
       moves: 0,
       pairsMerged: 0,
@@ -49,10 +60,14 @@ class GameLogic {
   }
 
   // Sinh cấp độ ảnh ngẫu nhiên
-  static int _randomStartLevel(int maxLevel) {
+  static int _randomStartLevel(
+    int maxLevel,
+    Random random, {
+    bool allowFinal = true,
+  }) {
     if (maxLevel <= 1) return 1;
 
-    final roll = _random.nextInt(100);
+    final roll = random.nextInt(100);
 
     int level;
 
@@ -64,7 +79,7 @@ class GameLogic {
       level = 3;
     }
 
-    return min(level, maxLevel);
+    return min(level, allowFinal ? maxLevel : maxLevel - 1);
   }
 
   static List<int> _emptyCells(List<int?> board) {
@@ -74,13 +89,43 @@ class GameLogic {
     ];
   }
 
-  static bool _spawnTile(List<int?> board, int maxLevel) {
+  static bool _spawnTile(
+    List<int?> board,
+    int maxLevel,
+    int highest,
+    Random random,
+    SpawnConfig? config,
+  ) {
     final empty = _emptyCells(board);
 
     if (empty.isEmpty) return false;
 
-    final position = empty[_random.nextInt(empty.length)];
-    board[position] = _randomStartLevel(maxLevel);
+    final position = empty[random.nextInt(empty.length)];
+    if (config == null || highest < 5) {
+      board[position] = _randomStartLevel(
+        maxLevel,
+        random,
+        allowFinal: config == null,
+      );
+    } else {
+      final eligible = board
+          .whereType<int>()
+          .where((level) => level < highest && level < maxLevel)
+          .toList();
+      if (eligible.isNotEmpty && random.nextDouble() < config.supportChance) {
+        board[position] = eligible.reduce(min);
+      } else {
+        final lag = random.nextDouble() < config.closerSpawnChance ? 3 : 4;
+        final base = max(1, highest - lag);
+        final roll = random.nextDouble();
+        final offset = roll < config.lowWeight
+            ? 0
+            : roll < config.lowWeight + config.middleWeight
+            ? 1
+            : 2;
+        board[position] = min(min(highest - 1, maxLevel - 1), base + offset);
+      }
+    }
 
     return true;
   }
@@ -104,13 +149,26 @@ class GameLogic {
   }
 
   // Lấp đầy tất cả ô trống sau khi ghép thành công
-  static void _refillBoard(List<int?> board, int maxLevel) {
+  static void _refillBoard(
+    List<int?> board,
+    int maxLevel,
+    int highest,
+    Random random,
+    SpawnConfig? config,
+  ) {
     while (_emptyCells(board).isNotEmpty) {
-      if (!_spawnTile(board, maxLevel)) break;
+      if (!_spawnTile(board, maxLevel, highest, random, config)) break;
     }
   }
 
-  static GameState merge(GameState current, int from, int to, int maxLevel) {
+  static GameState merge(
+    GameState current,
+    int from,
+    int to,
+    int maxLevel, {
+    Random? random,
+    SpawnConfig? spawnConfig,
+  }) {
     if (current.isGameOver || !canMerge(current.board, from, to, maxLevel)) {
       return current;
     }
@@ -124,6 +182,10 @@ class GameLogic {
     board[to] = currentLevel + 1;
 
     final newLevel = currentLevel + 1;
+    final highest = max(
+      current.highestDiscoveredLevel,
+      max(newLevel, current.board.whereType<int>().fold<int>(1, max)),
+    );
     final gainedScore = newLevel;
 
     // Mỗi thao tác chỉ tính một cặp ghép thành công
@@ -134,10 +196,14 @@ class GameLogic {
 
     final timedRewardProgress = current.timedRewardProgress + mergedPairs;
 
-    _refillBoard(board, maxLevel);
+    _refillBoard(board, maxLevel, highest, random ?? _random, spawnConfig);
 
     return GameState(
       board: board,
+      highestDiscoveredLevel: max(
+        highest,
+        board.whereType<int>().fold<int>(1, max),
+      ),
       score: current.score + gainedScore,
       moves: current.moves + 1,
       pairsMerged: current.pairsMerged + mergedPairs,

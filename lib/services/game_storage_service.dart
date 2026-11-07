@@ -8,7 +8,18 @@ import '../models/game_state.dart';
 class GameStorageService {
   // Phần thưởng Chơi tự do
   static const int pairsPerReward = 14;
-  static const int coinsPerReward = 11;
+  static const Map<String, int> collectionRewardCoins = {
+    'collection_1': 11,
+    'collection_2': 14,
+    'collection_3': 22,
+    'collection_4': 24,
+    'collection_5': 28,
+    'collection_6': 30,
+  };
+
+  static int coinsPerReward(String collectionId) {
+    return collectionRewardCoins[collectionId] ?? 11;
+  }
 
   // Phần thưởng Thử thách thời gian
   static const int timedPairsPerReward = 5;
@@ -49,6 +60,7 @@ class GameStorageService {
       'board': state.board,
       'score': state.score,
       'moves': state.moves,
+      'highestDiscoveredLevel': state.highestDiscoveredLevel,
       'pairsMerged': state.pairsMerged,
       'maxLevelCelebrations': state.maxLevelCelebrations,
       'maxLevelNoticeShownFor': state.maxLevelNoticeShownFor,
@@ -85,10 +97,21 @@ class GameStorageService {
 
       if (board.length != 9) return null;
 
+      // Old saves derive progress from the board without discarding the game.
+      final boardHighest = board.whereType<int>().fold<int>(
+        1,
+        (a, b) => a > b ? a : b,
+      );
+      final savedHighest =
+          data['highestDiscoveredLevel'] as int? ?? boardHighest;
+
       return GameState(
         board: board,
         score: data['score'] as int? ?? 0,
         moves: data['moves'] as int? ?? 0,
+        highestDiscoveredLevel: savedHighest > boardHighest
+            ? savedHighest
+            : boardHighest,
         pairsMerged: data['pairsMerged'] as int? ?? 0,
         maxLevelCelebrations: data['maxLevelCelebrations'] as int? ?? 0,
         maxLevelNoticeShownFor: data['maxLevelNoticeShownFor'] as int? ?? 0,
@@ -101,8 +124,11 @@ class GameStorageService {
     }
   }
 
-  // Thưởng Chơi tự do: đủ 14 cặp nhận 11 xu
-  static Future<int> recordMergedPairs(int pairs) async {
+  // Thưởng Chơi tự do: đủ 14 cặp nhận xu theo collection đang chơi.
+  static Future<int> recordMergedPairs(
+    int pairs, {
+    required String collectionId,
+  }) async {
     if (pairs <= 0) return 0;
 
     final prefs = await SharedPreferences.getInstance();
@@ -114,7 +140,7 @@ class GameStorageService {
     final newProgress = oldProgress + pairs;
     final rewards = newProgress ~/ pairsPerReward;
     final remainingProgress = newProgress % pairsPerReward;
-    final earnedCoins = rewards * coinsPerReward;
+    final earnedCoins = rewards * coinsPerReward(collectionId);
 
     await prefs.setInt(_coinProgressKey, remainingProgress);
     await prefs.setInt(_totalPairsKey, oldTotalPairs + pairs);
