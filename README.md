@@ -1,7 +1,36 @@
 # bo_anh
 
-- Khi ẩn tab, chuyển ứng dụng, khóa màn hình hoặc rời trang, game dừng hiệu ứng
-  và tháo iframe SoundCloud để không giữ nhạc chạy nền. Quay lại cần bấm loa
+- Game không đăng nhập Google. Xu và tiến độ vẫn tự lưu trên trình duyệt,
+  không phụ thuộc mạng hoặc sự kiện thoát trang. Tùy chọn **Sao lưu / Khôi phục**
+  dùng mã người chơi và mã khôi phục, chỉ gọi Supabase khi người chơi chủ động.
+  Cần chạy SQL trước khi dùng; hướng dẫn tại [docs/CLOUD_BACKUP.md](docs/CLOUD_BACKUP.md).
+- Tiến độ cục bộ: xu, tiến độ thưởng, bộ đã mở,
+  ván chơi và kỷ lục dùng chung bản ghi JSON `player_data_v1` trong
+  SharedPreferences. Các thao tác đọc/ghi trong phiên game chạy tuần tự;
+  lượt ghép và thưởng xu được ghi cùng nhau trước khi giao diện xác nhận.
+  Mở khóa cũng trừ xu và thêm bộ ảnh trong một lần ghi.
+- Dữ liệu định dạng cũ tự chuyển sang bản ghi mới khi đọc lần đầu; các khóa
+  cũ được giữ nguyên để dự phòng, không nhập lại sau khi đã chuyển thành công.
+  Dữ liệu lỗi không bị tự đặt về 0. Nếu không lưu được, game báo lỗi thay vì
+  báo nhận thưởng thành công. Test hồi quy: `flutter test test/local_player_storage_test.dart`.
+- Bước này chỉ lưu trên cùng trình duyệt và địa chỉ web. Xóa dữ liệu website,
+  đổi tên miền hoặc dùng tab riêng tư không có bảo đảm khôi phục; hàng đợi
+  hiện tại cũng không khóa giao dịch giữa nhiều tab chơi đồng thời.
+  Chrome và Safari có vùng lưu trữ riêng, không chia sẻ số xu với nhau.
+  Dùng một địa chỉ cố định khi chạy local: `flutter run -d chrome --web-port 3000`.
+  Đổi cổng localhost cũng tạo vùng lưu trữ khác, có thể trông như mất xu.
+- Kiểm tra sau deploy trên Chrome Android và Safari iPhone (chế độ thường):
+  nhận xu rồi reload; rời trang rồi mở lại cùng URL; mở khóa bộ ảnh rồi reload.
+  Xu và bộ đã mở phải giữ nguyên. Chỉ báo thưởng sau khi ghi thành công;
+  thao tác đang chờ ghi lúc đóng trang đột ngột chưa được xác nhận là đã lưu.
+
+- Khi ẩn tab hoặc chuyển ứng dụng, secret đang phát được tạm dừng cùng
+  AudioContext, giữ vị trí và quyền ưu tiên. Quay lại game thử phát tiếp;
+  Safari có thể cần thêm một lần chạm. Sound thường không phát lại sau khi ẩn.
+  Chủ động dừng/chơi lại/rời màn chơi vẫn hủy secret. Trạng thái tạm dừng chỉ
+  tồn tại trong phiên trang hiện tại, không được lưu qua reload/đóng tab.
+- Khi ẩn tab, chuyển ứng dụng, khóa màn hình hoặc rời trang, game tháo
+  iframe SoundCloud để không giữ nhạc nền chạy ngầm. Quay lại cần bấm loa
   để tải lại playlist từ đầu; âm lượng đã chọn vẫn được giữ. Chuyển màn hình
   bên trong game vẫn giữ nhạc liên tục. Game dọn Media Session của trang nếu
   trình duyệt hỗ trợ; thẻ media cũ trên hệ điều hành có thể vẫn được giữ lại.

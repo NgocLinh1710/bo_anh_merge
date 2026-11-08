@@ -3,6 +3,8 @@
   // One context survives file changes. Unlock it synchronously in a trusted
   // gesture, before Flutter's async storage/network work loses that gesture.
   let context, activeSource, onComplete;
+  let activePath = null;
+  let pausedSecret = false;
   let generation = 0;
   let pageActive = !document.hidden;
   const buffers = new Map();
@@ -30,9 +32,12 @@
     if (event.type === 'keydown' && !['Enter', ' '].includes(event.key)) return;
     try {
       const audio = getContext();
-      if (audio.state === 'running') return;
+      if (audio.state === 'running' && !pausedSecret) return;
       // Call resume here, not after a fetch, timer, or Promise callback.
-      audio.resume().catch((error) => console.warn('Sound unlock failed', error));
+      audio.resume().then(() => {
+        if (pageActive && !document.hidden) pausedSecret = false;
+        else return audio.suspend();
+      }).catch((error) => console.warn('Sound unlock failed', error));
       const silent = audio.createBufferSource();
       silent.buffer = audio.createBuffer(1, 1, audio.sampleRate);
       silent.connect(audio.destination);
@@ -49,22 +54,44 @@
 
   function leavePage() {
     pageActive = false;
-    stop();
-    // Release Dart's secret reservation when an effect is interrupted.
-    if (onComplete) onComplete();
+    if (activeSource && activePath?.startsWith('sounds/sound_secret/')) {
+      // Suspending freezes the context clock and the source position. Keep
+      // Dart's secret reservation so a reward cannot replace it on return.
+      ++generation;
+      pausedSecret = true;
+    } else {
+      stop();
+      if (onComplete) onComplete();
+    }
     if (context && context.state === 'running') {
       context.suspend().catch((error) => console.warn('Sound suspension failed', error));
     }
   }
+  function returnToPage() {
+    pageActive = !document.hidden;
+    if (!pageActive || !pausedSecret || !context) return;
+    const current = generation;
+    // Previously unlocked contexts can often resume without another gesture.
+    // Safari may still require a touch: unlock() retries without losing source.
+    try {
+      context.resume().then(() => {
+        if (current !== generation) return;
+        if (pageActive && !document.hidden) pausedSecret = false;
+        else return context.suspend();
+      }).catch(() => {});
+    } catch (_) { /* Retry on the next trusted gesture. */ }
+  }
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) leavePage();
-    else pageActive = true;
+    else returnToPage();
   });
   window.addEventListener('pagehide', leavePage);
-  window.addEventListener('pageshow', () => { pageActive = !document.hidden; });
+  window.addEventListener('pageshow', returnToPage);
 
   function stop() {
     ++generation;
+    activePath = null;
+    pausedSecret = false;
     if (activeSource) {
       const source = activeSource;
       activeSource = null;
@@ -125,9 +152,11 @@
         source.disconnect();
         if (activeSource !== source) return;
         activeSource = null;
+        activePath = null;
         if (onComplete) onComplete();
       };
       activeSource = source;
+      activePath = path;
       source.start(0);
     } catch (error) {
       console.warn('Sound effect could not play', error);
