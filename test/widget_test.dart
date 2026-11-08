@@ -7,5 +7,10 @@ void main() {
 
     expect(find.text('BơAnh Alliance'), findsOneWidget);
     expect(find.text('BẮT ĐẦU CHƠI'), findsOneWidget);
+    expect(
+      find.text('Xu và tiến độ tự lưu trên trình duyệt này.'),
+      findsOneWidget,
+    );
+    expect(find.text('Đăng nhập với Google'), findsNothing);
   });
 }

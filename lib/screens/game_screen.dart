@@ -42,6 +42,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   bool dialogShowing = false;
   bool isLoading = true;
+  bool _isSavingMove = false;
+  bool _storageLoadFailed = false;
 
   SpawnConfig? get _spawnConfig => widget.mode == GameMode.free
       ? SpawnConfig.collections[widget.collection.id] ?? const SpawnConfig()
@@ -62,6 +64,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   // Tải ván chơi và điểm cao nhất đã lưu
   Future<void> _loadSavedGame() async {
+    try {
+      await _loadSavedGameData();
+    } catch (error) {
+      debugPrint('Lỗi đọc tiến độ đã lưu: $error');
+      if (mounted) {
+        setState(() {
+          _storageLoadFailed = true;
+          isLoading = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadSavedGameData() async {
     final collectionId = widget.collection.id;
 
     final results = await Future.wait([
@@ -111,6 +127,24 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   // Lưu trạng thái hiện tại và cập nhật điểm cao nhất
   Future<void> _saveCurrentGame() async {
+    if (_isSavingMove || _storageLoadFailed) return;
+    try {
+      await _persistCurrentGame();
+    } catch (error) {
+      debugPrint('Lỗi lưu ván: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Chưa lưu được tiến độ. Kiểm tra bộ nhớ trình duyệt rồi thử lại.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _persistCurrentGame() async {
     final stateToSave = gameState;
     final collectionId = widget.collection.id;
 
@@ -231,13 +265,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     _timerRunning = false;
 
     // Chỉ lưu nếu ván vẫn còn thời gian.
-    if (!isLoading &&
+    if (!_isSavingMove &&
+        !isLoading &&
         !(widget.mode == GameMode.timed && gameState.remainingSeconds <= 0)) {
-      GameStorageService.saveGame(
-        widget.collection.id,
-        gameState,
-        mode: widget.mode,
-      );
+      unawaited(_saveCurrentGame());
     }
 
     SoundService.stop();
@@ -245,7 +276,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   void _handleTileTap(int index) {
-    if (isLoading || gameState.isGameOver || _timeExpired || dialogShowing) {
+    if (_isSavingMove ||
+        isLoading ||
+        gameState.isGameOver ||
+        _timeExpired ||
+        dialogShowing) {
       return;
     }
 
@@ -290,8 +325,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _mergeTiles(int from, int to) {
-    if (isLoading || gameState.isGameOver || _timeExpired || dialogShowing) {
+  Future<void> _mergeTiles(int from, int to) async {
+    if (_isSavingMove ||
+        isLoading ||
+        gameState.isGameOver ||
+        _timeExpired ||
+        dialogShowing) {
       return;
     }
 
@@ -311,102 +350,70 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final newlyMergedPairs = nextState.pairsMerged - previousPairs;
     final createdFinalImage =
         nextState.maxLevelCelebrations > gameState.maxLevelCelebrations;
-    if (createdFinalImage) {
-      unawaited(SoundService.playSecret(widget.collection.id));
-    }
-
     setState(() {
-      gameState = nextState;
-      selectedIndex = null;
+      _isSavingMove = true;
     });
-
-    _saveCurrentGame();
-
-    // Cộng xu theo tổng số cặp thực tế đã ghép
-    if (newlyMergedPairs > 0) {
-      if (widget.mode == GameMode.free) {
-        _recordMergeRewards(
-          newlyMergedPairs,
-          createdFinalImage: createdFinalImage,
-        );
-      } else {
-        _recordTimedMergeRewards(
-          newlyMergedPairs,
-          createdFinalImage: createdFinalImage,
+    var committed = false;
+    try {
+      final earnedCoins = await GameStorageService.recordMergeAndSaveGame(
+        widget.collection.id,
+        nextState,
+        pairs: newlyMergedPairs,
+        mode: widget.mode,
+      );
+      committed = true;
+      if (!mounted) return;
+      setState(() {
+        gameState = widget.mode == GameMode.timed
+            ? nextState.copyWith(remainingSeconds: gameState.remainingSeconds)
+            : nextState;
+        selectedIndex = null;
+        highScore = gameState.score > highScore ? gameState.score : highScore;
+      });
+      final results = await Future.wait([
+        GameStorageService.loadTotalCoins(),
+        GameStorageService.loadCoinProgress(),
+        GameStorageService.loadTotalPairs(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        totalCoins = results[0];
+        coinProgress = results[1];
+        totalPairs = results[2];
+      });
+      if (createdFinalImage) {
+        unawaited(SoundService.playSecret(widget.collection.id));
+      } else if (earnedCoins > 0) {
+        unawaited(SoundService.playReward());
+      }
+      if (earnedCoins > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🎉 Bạn nhận được $earnedCoins xu!'),
+            backgroundColor: AppColors.butterDark,
+            duration: const Duration(seconds: 2),
+          ),
         );
       }
-    }
-
-    _checkMilestones();
-  }
-
-  Future<void> _recordMergeRewards(
-    int pairs, {
-    required bool createdFinalImage,
-  }) async {
-    final earnedCoins = await GameStorageService.recordMergedPairs(
-      pairs,
-      collectionId: widget.collection.id,
-    );
-
-    final results = await Future.wait([
-      GameStorageService.loadTotalCoins(),
-      GameStorageService.loadCoinProgress(),
-      GameStorageService.loadTotalPairs(),
-    ]);
-
-    if (!mounted) return;
-
-    setState(() {
-      totalCoins = results[0];
-      coinProgress = results[1];
-      totalPairs = results[2];
-    });
-
-    if (earnedCoins > 0) {
-      if (!createdFinalImage) unawaited(SoundService.playReward());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('🎉 Bạn nhận được $earnedCoins xu!'),
-          backgroundColor: AppColors.butterDark,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  Future<void> _recordTimedMergeRewards(
-    int pairs, {
-    required bool createdFinalImage,
-  }) async {
-    // API này ghi nhận từng cặp và chỉ cộng 10 xu tại mỗi mốc 5 cặp
-    final earnedCoins = await GameStorageService.recordTimedMergedPair(
-      pairs: pairs,
-      reward:
-          gameState.timedRewardProgress > 0 &&
-          gameState.timedRewardProgress % 5 == 0,
-    );
-
-    final results = await Future.wait([
-      GameStorageService.loadTotalCoins(),
-      GameStorageService.loadTotalPairs(),
-    ]);
-
-    if (!mounted) return;
-    setState(() {
-      totalCoins = results[0];
-      totalPairs = results[1];
-    });
-
-    if (earnedCoins > 0) {
-      if (!createdFinalImage) unawaited(SoundService.playReward());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('🎉 Bạn nhận được $earnedCoins xu!'),
-          backgroundColor: AppColors.butterDark,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+    } catch (error) {
+      debugPrint('Lỗi lưu lượt ghép: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              committed
+                  ? 'Đã lưu lượt ghép nhưng chưa tải lại được số xu. Hãy mở lại game.'
+                  : 'Chưa lưu được lượt ghép. Kiểm tra bộ nhớ trình duyệt rồi thử lại.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      _isSavingMove = false;
+      if (mounted) {
+        setState(() {});
+        _checkMilestones();
+      }
     }
   }
 
@@ -626,6 +633,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   // Chơi lại nhưng không xóa điểm cao nhất và số xu
   void _restartGame() {
+    if (_isSavingMove) return;
     _gameTimer?.cancel();
     _gameTimer = null;
     _timerRunning = false;
@@ -1117,7 +1125,32 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           ),
         ),
         child: SafeArea(
-          child: isLoading
+          child: _storageLoadFailed
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Chưa đọc được tiến độ đã lưu. Dữ liệu hiện có vẫn được giữ nguyên.',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _storageLoadFailed = false;
+                            });
+                            unawaited(_loadSavedGame());
+                          },
+                          child: const Text('Thử lại'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : isLoading
               ? const Center(
                   child: CircularProgressIndicator(color: AppColors.butterDark),
                 )

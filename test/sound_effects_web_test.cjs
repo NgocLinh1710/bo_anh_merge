@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function setup({ delayedFetch = false, failFirst = false } = {}) {
+function setup({ delayedFetch = false, failFirst = false, resumeNeedsGesture = true } = {}) {
   const listeners = new Map();
   const contexts = [], sources = [], requests = [], warnings = [];
   const windowEvents = new Map();
@@ -17,7 +17,7 @@ function setup({ delayedFetch = false, failFirst = false } = {}) {
       contexts.push(this);
     }
     resume() {
-      assert.equal(gesture, true, 'Safari unlock must occur directly in the trusted gesture');
+      if (resumeNeedsGesture) assert.equal(gesture, true, 'Safari unlock must occur directly in the trusted gesture');
       this.resumeCount++;
       this.state = 'running';
       return Promise.resolve();
@@ -71,7 +71,7 @@ function setup({ delayedFetch = false, failFirst = false } = {}) {
   };
 }
 
-test('hiding game stops effects and releases secret priority; next gesture resumes context', async () => {
+test('hiding pauses secret without completing it; a Safari gesture resumes the same source', async () => {
   const app = setup();
   app.gesture();
   let completed = 0;
@@ -79,17 +79,58 @@ test('hiding game stops effects and releases secret priority; next gesture resum
   await app.audio.play('sounds/sound_secret/Sound 1.mp3');
   const source = app.sources.at(-1);
   app.visibility(true);
-  assert.equal(source.stopped, true);
-  assert.equal(source.onended, null);
-  assert.equal(completed, 1);
+  assert.equal(source.stopped, undefined);
+  assert.equal(typeof source.onended, 'function');
+  assert.equal(completed, 0);
   assert.equal(app.contexts[0].state, 'suspended');
   const requests = app.requests.length;
   await assert.rejects(app.audio.play('sounds/sound_normal/a.mp3'), /page is hidden/);
   assert.equal(app.requests.length, requests);
   app.visibility(false);
   app.gesture();
+  await Promise.resolve();
+  assert.equal(app.contexts[0].state, 'running');
+  assert.equal(source.stopped, undefined);
+  assert.equal(app.requests.length, requests);
+  source.onended();
+  assert.equal(completed, 1);
+});
+
+test('returning resumes an already-unlocked secret automatically when the browser permits', async () => {
+  const app = setup({ resumeNeedsGesture: false });
+  app.gesture();
+  await app.audio.play('sounds/sound_secret/Sound 3.mp3');
+  const source = app.sources.at(-1);
+  app.visibility(true);
+  app.pagehide();
+  assert.equal(app.contexts[0].state, 'suspended');
+  app.visibility(false);
+  await Promise.resolve();
+  assert.equal(app.contexts[0].state, 'running');
+  assert.equal(source.stopped, undefined);
+  assert.equal(app.requests.length, 1);
+});
+
+test('explicit stop while hidden cancels secret so it cannot replay on return', async () => {
+  const app = setup({ resumeNeedsGesture: false });
+  app.gesture();
+  await app.audio.play('sounds/sound_secret/Sound 4.mp3');
+  const source = app.sources.at(-1);
+  app.visibility(true);
+  app.audio.stop();
+  app.visibility(false);
+  assert.equal(source.stopped, true);
+  assert.equal(app.contexts[0].state, 'suspended');
+});
+
+test('ordinary reward sounds are discarded instead of replaying after leaving', async () => {
+  const app = setup();
+  app.gesture();
   await app.audio.play('sounds/sound_normal/a.mp3');
-  assert.equal(app.sources.at(-1).started, true);
+  const source = app.sources.at(-1);
+  app.visibility(true);
+  assert.equal(source.stopped, true);
+  assert.equal(source.onended, null);
 });
 
 test('unlocks synchronously on touchend, then plays async rewards and secret through one context', async () => {
