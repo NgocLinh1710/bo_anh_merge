@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/services.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'sound_backend_native.dart'
+    if (dart.library.js_interop) 'sound_backend_web.dart';
 
 /// Serializes player commands and reserves priority when secret is requested.
 class SoundPlaybackController {
@@ -85,9 +86,8 @@ class SoundPlaybackController {
 }
 
 class SoundService {
-  static final AudioPlayer _player = AudioPlayer();
+  static final SoundBackend _backend = SoundBackend();
   static final SoundPlaybackController _playback = _createPlayback();
-  static StreamSubscription<void>? _completion;
 
   static SoundPlaybackController _createPlayback() {
     final playback = SoundPlaybackController(
@@ -103,13 +103,10 @@ class SoundService {
             .map((path) => path.replaceFirst('assets/', ''))
             .toList();
       },
-      playAsset: (path) async {
-        await _player.setReleaseMode(ReleaseMode.release);
-        await _player.play(AssetSource(path));
-      },
-      stopPlayer: _player.stop,
+      playAsset: _backend.play,
+      stopPlayer: _backend.stop,
     );
-    _completion = _player.onPlayerComplete.listen((_) => playback.onComplete());
+    _backend.setOnComplete(playback.onComplete);
     return playback;
   }
 
@@ -120,7 +117,6 @@ class SoundService {
 
   static Future<void> dispose() async {
     await _playback.stop();
-    await _completion?.cancel();
-    await _player.dispose();
+    await _backend.dispose();
   }
 }

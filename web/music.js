@@ -36,11 +36,45 @@
   let generation = 0;
   let ready = false, playing = false, enabled = true, failed = false;
   let awaitingAutoplay = true;
+  let pageActive = !document.hidden;
+
+  function stopForBackground() {
+    pageActive = false;
+    enabled = playing = awaitingAutoplay = false;
+    // pause is a cross-frame message and may arrive too late during suspension.
+    // Destroy the iframe as well so it cannot retain background media playback.
+    if (widget) {
+      try { widget.pause(); } catch (_) { /* Still remove an unresponsive frame. */ }
+    }
+    ++generation;
+    clearTimeout(readyTimeout);
+    widget = null;
+    ready = true;
+    failed = false;
+    container.replaceChildren();
+    const session = window.navigator?.mediaSession;
+    if (session) {
+      try { session.playbackState = 'none'; session.metadata = null; } catch (_) {}
+      for (const action of ['play', 'pause', 'stop', 'seekbackward', 'seekforward', 'seekto', 'previoustrack', 'nexttrack']) {
+        try { session.setActionHandler(action, null); } catch (_) {}
+      }
+      try { session.setPositionState(); } catch (_) {}
+    }
+    updateSpeaker();
+    status.textContent = 'Nhạc đã dừng khi rời game · Bấm loa để bật lại.';
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopForBackground();
+    else pageActive = true; // Returning does not restart music without consent.
+  });
+  window.addEventListener('pagehide', stopForBackground);
+  window.addEventListener('pageshow', () => { pageActive = !document.hidden; });
 
   // Browsers may block sound on initial load. Retry within a real interaction
   // in the game, without intercepting that interaction or undoing user mute.
   function tryAutoplayFromGesture(event) {
-    if (!event.isTrusted || !awaitingAutoplay || !enabled || !ready || failed || playing) return;
+    if (!pageActive || document.hidden || !event.isTrusted || !awaitingAutoplay || !enabled || !ready || failed || playing) return;
     if (event.composedPath().includes(toggle) || event.composedPath().includes(volumeControl)) return;
     if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
     widget.play();
@@ -77,6 +111,7 @@
   }
 
   async function initialize() {
+    if (!pageActive || document.hidden) { stopForBackground(); return; }
     const current = ++generation;
     clearTimeout(readyTimeout);
     widget = null;
@@ -150,6 +185,7 @@
   }
 
   toggle.addEventListener('click', () => {
+    if (!pageActive || document.hidden) return;
     awaitingAutoplay = false;
     if (failed) { enabled = true; return initialize(); }
     if (playing || (enabled && !ready)) {

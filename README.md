@@ -1,5 +1,23 @@
 # bo_anh
 
+- Khi ẩn tab, chuyển ứng dụng, khóa màn hình hoặc rời trang, game dừng hiệu ứng
+  và tháo iframe SoundCloud để không giữ nhạc chạy nền. Quay lại cần bấm loa
+  để tải lại playlist từ đầu; âm lượng đã chọn vẫn được giữ. Chuyển màn hình
+  bên trong game vẫn giữ nhạc liên tục. Game dọn Media Session của trang nếu
+  trình duyệt hỗ trợ; thẻ media cũ trên hệ điều hành có thể vẫn được giữ lại.
+
+- Hiệu ứng web dùng AudioContext chung trong `web/sound-effects.js`, được mở
+  trực tiếp từ thao tác chạm/click/phím thật để hỗ trợ Safari iPhone. File MP3
+  được tải, giải mã và lưu đệm; việc cộng xu bất đồng bộ không cần tạo lại
+  phần tử audio cho mỗi file. Nhạc nền SoundCloud vẫn dùng trình phát riêng.
+  Nếu tab bị gián đoạn khi ra nền, lần chạm tiếp theo thử khôi phục context.
+  Trên Safari có hỗ trợ Audio Session API, đặt loại `playback` để hiệu ứng
+  không bị chế độ im lặng của iPhone tắt riêng trong khi SoundCloud vẫn có tiếng.
+- Kiểm tra hiệu ứng web: `node --test test/sound_effects_web_test.cjs`.
+  Sau khi deploy, thử trên Safari iPhone: chạm Bắt đầu, đạt mốc nhận xu,
+  ghép ảnh cuối để nghe secret; chuyển tab rồi quay lại và chạm để kiểm tra
+  khôi phục. Cần kiểm tra nghe thực tế trên thiết bị ngoài các test tự động.
+
 - Chơi tự do dùng cấu hình riêng từng ver trong `lib/models/spawn_config.dart`.
   Từ cấp 5, ảnh sinh ra tăng theo cấp cao nhất đã khám phá trong ván;
   35% cơ hội hỗ trợ ảnh cấp thấp còn sót trên bàn. Các ảnh sau nhóm khởi đầu
