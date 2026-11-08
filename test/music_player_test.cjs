@@ -3,6 +3,52 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+test('leaving game pauses and destroys SoundCloud; returning needs explicit speaker click', async () => {
+  const app = setup();
+  await Promise.resolve();
+  app.events.ready();
+  app.events.play();
+  const latePlay = app.events.play;
+  const lateFinish = app.events.finish;
+  app.visibility(true);
+  assert.deepEqual(app.calls.at(-1), ['pause']);
+  assert.equal(app.elements.get('music-player').children.length, 0);
+  assert.equal(app.mediaSession.playbackState, 'none');
+  assert.equal(app.mediaSession.metadata, null);
+  const count = app.calls.length;
+  latePlay(); lateFinish();
+  app.visibility(false);
+  app.gesture('pointerdown');
+  assert.equal(app.calls.length, count);
+  await app.click();
+  assert.equal(app.elements.get('music-player').children.length, 1);
+  app.events.ready();
+  assert.deepEqual(app.calls.at(-1), ['play']);
+});
+
+test('pagehide tears down music even without a visibility event and bfcache cannot autoplay', async () => {
+  const app = setup();
+  await Promise.resolve();
+  const lateReady = app.events.ready;
+  app.pagehide();
+  lateReady();
+  app.pageshow();
+  app.gesture('pointerdown');
+  assert.equal(app.elements.get('music-player').children.length, 0);
+  assert.equal(app.calls.filter(call => call[0] === 'play').length, 0);
+});
+
+test('hiding while SoundCloud API loads cancels player initialization', async () => {
+  const app = setup({ apiAvailable: false });
+  app.visibility(true);
+  app.head.children[0].onerror();
+  await Promise.resolve();
+  await Promise.resolve();
+  app.visibility(false);
+  assert.equal(app.elements.get('music-player').children.length, 0);
+  assert.match(app.elements.get('music-status').textContent, /rời game/);
+});
+
 test('volume defaults to 30%, updates live, and survives a new page session including zero', async () => {
   const storage = new Map();
   const app = setup({ storage });
@@ -89,6 +135,8 @@ function setup({ apiAvailable = true, storage = new Map(), storageBlocked = fals
   Widget.Events = { READY: 'ready', ERROR: 'error', FINISH: 'finish', PLAY: 'play', PAUSE: 'pause' };
   const head = element();
   const gestures = {};
+  const windowEvents = {};
+  const mediaSession = { playbackState: 'playing', metadata: {}, setActionHandler() {}, setPositionState() {} };
   const localStorage = {
     getItem(key) {
       if (storageBlocked) throw new Error('Storage blocked');
@@ -99,14 +147,21 @@ function setup({ apiAvailable = true, storage = new Map(), storageBlocked = fals
       storage.set(key, value);
     },
   };
+  const document = { hidden: false, getElementById: (id) => elements.get(id), createElement: element, head,
+    addEventListener(name, fn) { gestures[name] = fn; } };
+  const window = { localStorage, navigator: { mediaSession },
+    addEventListener(name, fn) { windowEvents[name] = fn; } };
+  if (apiAvailable) window.SC = { Widget };
   const context = {
-    document: { getElementById: (id) => elements.get(id), createElement: element, head,
-      addEventListener(name, fn) { gestures[name] = fn; } },
-    window: apiAvailable ? { SC: { Widget }, localStorage } : { localStorage },
+    document, window,
     URLSearchParams, setTimeout: () => 1, clearTimeout() {},
   };
   vm.runInNewContext(fs.readFileSync('web/music.js', 'utf8'), context);
-  return { elements, events, calls, volumes, head, setIndex(value) { index = value; },
+  return { elements, events, calls, volumes, head, mediaSession,
+    visibility(hidden) { document.hidden = hidden; gestures.visibilitychange(); },
+    pagehide() { windowEvents.pagehide(); },
+    pageshow() { windowEvents.pageshow(); },
+    setIndex(value) { index = value; },
     gesture(type, overrides = {}) {
       gestures[type]({ type, isTrusted: true, composedPath: () => [], ...overrides });
     },
