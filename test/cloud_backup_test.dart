@@ -130,17 +130,29 @@ void main() {
         MaterialApp(home: BackupScreen(service: service)),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), service.recoveryCode!);
-      await tester.ensureVisible(find.text('Khôi phục'));
-      await tester.tap(find.text('Khôi phục'));
+      expect(find.text('Xóa dữ liệu trên server'), findsNothing);
+      expect(find.text('Chọn ảnh QR từ bộ sưu tập'), findsOneWidget);
+      expect(find.text('Quét QR bằng camera'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+      Future<void> scanCode() async {
+        final navigator = Navigator.of(
+          tester.element(find.byType(BackupScreen)),
+        );
+        await tester.ensureVisible(find.text('Quét QR bằng camera'));
+        await tester.tap(find.text('Quét QR bằng camera'));
+        // Return the decoded QR as the camera route would, without opening hardware.
+        navigator.pop(service.recoveryCode);
+        await tester.pumpAndSettle();
+      }
+
+      await scanCode();
       await tester.pumpAndSettle();
       expect(find.text('Thay tiến độ trên máy?'), findsOneWidget);
       await tester.tap(find.text('Hủy'));
       await tester.pumpAndSettle();
       expect(service.balance, 150);
       expect(service.restored, false);
-      await tester.tap(find.text('Khôi phục'));
-      await tester.pumpAndSettle();
+      await scanCode();
       await tester.tap(find.text('Đồng ý'));
       await tester.pumpAndSettle();
       expect(service.balance, 200);

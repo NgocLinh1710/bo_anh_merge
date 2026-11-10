@@ -1,5 +1,16 @@
 # bo_anh
 
+- Sao lưu: bấm **Lưu tiến độ**, sau đó **Lưu ảnh QR**. Trên laptop, ảnh PNG
+  tải thẳng về thư mục tải xuống mà trình duyệt đã thiết lập (thường là Downloads).
+  Trên điện thoại, chọn lưu hình ảnh trong bảng chia sẻ nếu trình duyệt hỗ trợ,
+  hoặc nhấn giữ ảnh QR để lưu. Nếu ảnh được tải về, mở ảnh trong Tệp/Downloads
+  để lưu vào bộ sưu tập. Web không tự ghi trực tiếp vào thư viện ảnh. Giữ kín QR.
+  QR chứa mã truy cập bản lưu server mới nhất, cần mạng để khôi phục;
+  số xu chỉ được cập nhật lên server khi bấm Lưu tiến độ.
+- Khôi phục: chọn ảnh QR từ bộ sưu tập, quét bằng camera (cần HTTPS và
+  quyền camera). Không còn ô nhập mã thủ công. Kiểm tra số xu rồi xác nhận thay thế
+  tiến độ; số dư không cộng dồn. Nút xóa bản lưu đã được bỏ khỏi giao diện.
+
 - Game không đăng nhập Google. Xu và tiến độ vẫn tự lưu trên trình duyệt,
   không phụ thuộc mạng hoặc sự kiện thoát trang. Tùy chọn **Sao lưu / Khôi phục**
   dùng mã người chơi và mã khôi phục, chỉ gọi Supabase khi người chơi chủ động.
