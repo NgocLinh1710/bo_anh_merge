@@ -73,6 +73,8 @@ flutter:
    - assets/collections/collection_5/
    - assets/collections/collection_6/
 
+   - assets/avt.png
+
    - assets/sounds/sound_normal/
    - assets/sounds/sound_secret/
 
