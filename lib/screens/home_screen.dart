@@ -20,6 +20,8 @@ class HomeScreen extends StatelessWidget {
                 : viewport.maxWidth < 600
                 ? 42.0
                 : 48.0;
+            final imageSize = compact ? 76.0 : 100.0;
+
             return SingleChildScrollView(
               child: ConstrainedBox(
                 constraints: BoxConstraints(minHeight: viewport.maxHeight),
@@ -36,12 +38,12 @@ class HomeScreen extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            '\u{1F951}',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: compact ? 68 : 90,
-                              height: 1.2,
+                          Center(
+                            child: Image.asset(
+                              'assets/avt.png',
+                              width: imageSize,
+                              height: imageSize,
+                              fit: BoxFit.contain,
                             ),
                           ),
                           SizedBox(height: compact ? 12 : 20),
