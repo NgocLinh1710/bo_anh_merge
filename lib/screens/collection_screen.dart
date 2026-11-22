@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import '../services/game_image_service.dart';
 
 import 'game_screen.dart';
 import '../main.dart';
@@ -351,6 +352,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
                             imageFilter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
                             child: Image.asset(
                               collection.imagePath(1),
+                              bundle: GameImageService.bundle,
                               width: double.infinity,
                               height: previewHeight,
                               fit: BoxFit.cover,
@@ -729,6 +731,7 @@ class _CollectionCard extends StatelessWidget {
                         ),
                         child: Image.asset(
                           collection.imagePath(1),
+                          bundle: GameImageService.bundle,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) {
                             return Container(

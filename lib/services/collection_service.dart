@@ -89,7 +89,7 @@ class CollectionService {
       final parts = asset.split('/');
 
       if (parts.length != 4) continue;
-      if (parts[0] != 'assets' || parts[1] != 'collections') {
+      if (parts[0] != 'assets' || parts[1] != 'collections_webp') {
         continue;
       }
 
