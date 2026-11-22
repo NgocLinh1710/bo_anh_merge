@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../main.dart';
 import '../models/game_collection.dart';
+import '../services/game_image_service.dart';
 
 class ImageTile extends StatelessWidget {
   final int? level;
@@ -51,6 +52,7 @@ class ImageTile extends StatelessWidget {
               : hasImage
               ? Image.asset(
                   collection.imagePath(level!),
+                  bundle: GameImageService.bundle,
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) {
                     return _fallback();

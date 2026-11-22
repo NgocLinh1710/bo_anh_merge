@@ -72,12 +72,12 @@ flutter:
   #   - images/a_dot_ham.jpeg
 
   assets:
-   - assets/collections/collection_1/
-   - assets/collections/collection_2/
-   - assets/collections/collection_3/
-   - assets/collections/collection_4/
-   - assets/collections/collection_5/
-   - assets/collections/collection_6/
+   - assets/collections_webp/collection_1/
+   - assets/collections_webp/collection_2/
+   - assets/collections_webp/collection_3/
+   - assets/collections_webp/collection_4/
+   - assets/collections_webp/collection_5/
+   - assets/collections_webp/collection_6/
 
    - assets/avt.png
 

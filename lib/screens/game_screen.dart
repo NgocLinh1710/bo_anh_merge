@@ -9,6 +9,7 @@ import '../models/game_mode.dart';
 import '../models/game_state.dart';
 import '../models/spawn_config.dart';
 import '../services/game_storage_service.dart';
+import '../services/game_image_service.dart';
 import '../utils/game_logic.dart';
 import '../widgets/game_board.dart';
 
@@ -44,6 +45,42 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool isLoading = true;
   bool _isSavingMove = false;
   bool _storageLoadFailed = false;
+  final _prefetchedImages = <String>{};
+  final _prefetchingImages = <String>{};
+
+  // Warm only this board and its next merge levels, never the whole library.
+  void _prefetchNearbyImages() {
+    final levels = gameState.board.whereType<int>().toSet();
+    final nearby = <int>{...levels, 1, 2, 3};
+    for (final level in levels) {
+      nearby.add(level + 1);
+    }
+    final paths = nearby
+        .where(widget.collection.hasLevel)
+        .map(widget.collection.imagePath)
+        .where((path) => !_prefetchedImages.contains(path))
+        .where((path) => !_prefetchingImages.contains(path))
+        .toList();
+    _prefetchingImages.addAll(paths);
+    unawaited(_prefetchImages(paths));
+  }
+
+  Future<void> _prefetchImages(List<String> paths) async {
+    for (final path in paths) {
+      if (!mounted) {
+        _prefetchingImages.removeAll(paths);
+        return;
+      }
+      var failed = false;
+      await precacheImage(
+        AssetImage(path, bundle: GameImageService.bundle),
+        context,
+        onError: (error, stack) => failed = true,
+      );
+      _prefetchingImages.remove(path);
+      if (!failed) _prefetchedImages.add(path);
+    }
+  }
 
   SpawnConfig? get _spawnConfig => widget.mode == GameMode.free
       ? SpawnConfig.collections[widget.collection.id] ?? const SpawnConfig()
@@ -123,6 +160,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
 
     _checkMilestones();
+    _prefetchNearbyImages();
   }
 
   // Lưu trạng thái hiện tại và cập nhật điểm cao nhất
@@ -370,6 +408,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         selectedIndex = null;
         highScore = gameState.score > highScore ? gameState.score : highScore;
       });
+      _prefetchNearbyImages();
       final results = await Future.wait([
         GameStorageService.loadTotalCoins(),
         GameStorageService.loadCoinProgress(),
@@ -496,6 +535,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                       borderRadius: BorderRadius.circular(18),
                       child: Image.asset(
                         widget.collection.imagePath(widget.collection.maxLevel),
+                        bundle: GameImageService.bundle,
                         fit: BoxFit.contain,
                         errorBuilder: (context, error, stackTrace) {
                           return const Icon(
@@ -651,6 +691,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
     SoundService.stop();
     _saveCurrentGame();
+    _prefetchNearbyImages();
     if (widget.mode == GameMode.timed) _startTimer();
   }
 

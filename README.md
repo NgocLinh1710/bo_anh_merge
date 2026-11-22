@@ -1,5 +1,7 @@
 # bo_anh
 
+- Tối ưu và cập nhật ảnh game: xem [docs/IMAGE_DELIVERY.md](docs/IMAGE_DELIVERY.md).
+
 - Sao lưu: bấm **Lưu tiến độ**, sau đó **Lưu ảnh QR**. Trên laptop, ảnh PNG
   tải thẳng về thư mục tải xuống mà trình duyệt đã thiết lập (thường là Downloads).
   Trên điện thoại, chọn lưu hình ảnh trong bảng chia sẻ nếu trình duyệt hỗ trợ,
