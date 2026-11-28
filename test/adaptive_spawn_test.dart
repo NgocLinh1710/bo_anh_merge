@@ -68,18 +68,15 @@ void main() {
             expect(state.board.whereType<int>(), hasLength(9));
             expect(state.pairsMerged, before.pairsMerged + 1);
           }
-          expect(
-            state.maxLevelCelebrations,
-            1,
-            reason: 'collection $collection, seed $seed',
-          );
-          moves.add(state.moves);
+          if (state.maxLevelCelebrations == 1) moves.add(state.moves);
         }
+        // Safe play remains viable; higher versions can still lose.
+        expect(moves.length, greaterThanOrEqualTo(95));
         moves.sort();
         final median = moves[moves.length ~/ 2];
         expect(median, greaterThan(previousMedian));
-        if (collection == 1) expect(median, inInclusiveRange(120, 150));
-        if (collection == 6) expect(median, inInclusiveRange(250, 320));
+        if (collection == 1) expect(median, inInclusiveRange(145, 170));
+        if (collection == 6) expect(median, inInclusiveRange(400, 450));
         previousMedian = median;
       }
     },

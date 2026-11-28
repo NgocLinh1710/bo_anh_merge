@@ -9,6 +9,7 @@ class GameBoard extends StatelessWidget {
   final List<int?> board;
   final GameCollection collection;
   final int? selectedIndex;
+  final bool allowDrag;
 
   final Function(int) onTileTap;
   final Function(int, int) onMerge;
@@ -23,6 +24,7 @@ class GameBoard extends StatelessWidget {
     required this.selectedIndex,
     required this.onTileTap,
     required this.onMerge,
+    this.allowDrag = true,
     this.onInvalidMergeAttempt,
   });
 
@@ -114,7 +116,7 @@ class GameBoard extends StatelessWidget {
 
                     return Draggable<int>(
                       data: index,
-                      maxSimultaneousDrags: 1,
+                      maxSimultaneousDrags: allowDrag ? 1 : 0,
 
                       feedback: Material(
                         color: Colors.transparent,

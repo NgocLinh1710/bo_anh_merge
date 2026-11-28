@@ -7,11 +7,13 @@ import '../main.dart';
 import '../models/game_collection.dart';
 import '../models/game_mode.dart';
 import '../models/game_state.dart';
+import '../models/collection_achievement.dart';
 import '../models/spawn_config.dart';
 import '../services/game_storage_service.dart';
 import '../services/game_image_service.dart';
 import '../utils/game_logic.dart';
 import '../widgets/game_board.dart';
+import '../widgets/challenge_panel.dart';
 
 class GameScreen extends StatefulWidget {
   final GameCollection collection;
@@ -45,6 +47,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool isLoading = true;
   bool _isSavingMove = false;
   bool _storageLoadFailed = false;
+  bool _choosingRescue = false;
+  CollectionAchievement _achievement = const CollectionAchievement();
+  final _boardKey = GlobalKey();
   final _prefetchedImages = <String>{};
   final _prefetchingImages = <String>{};
 
@@ -123,6 +128,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       GameStorageService.loadTotalCoins(),
       GameStorageService.loadCoinProgress(),
       GameStorageService.loadTotalPairs(),
+      GameStorageService.loadAchievement(collectionId),
     ]);
 
     final savedGame = results[0] as GameState?;
@@ -146,6 +152,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       totalCoins = savedCoins;
       coinProgress = savedProgress;
       totalPairs = savedPairs;
+      _achievement = results[5] as CollectionAchievement;
       isLoading = false;
 
       handledMaxLevelCelebrations = loadedGame.maxLevelCelebrations;
@@ -314,6 +321,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   void _handleTileTap(int index) {
+    if (_choosingRescue) {
+      unawaited(_rescueTile(index));
+      return;
+    }
     if (_isSavingMove ||
         isLoading ||
         gameState.isGameOver ||
@@ -365,6 +376,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   Future<void> _mergeTiles(int from, int to) async {
     if (_isSavingMove ||
+        _choosingRescue ||
         isLoading ||
         gameState.isGameOver ||
         _timeExpired ||
@@ -388,6 +400,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final newlyMergedPairs = nextState.pairsMerged - previousPairs;
     final createdFinalImage =
         nextState.maxLevelCelebrations > gameState.maxLevelCelebrations;
+    final firstWin =
+        gameState.firstWinMoves == null && nextState.firstWinMoves != null;
+    final previousBest = _achievement.bestMoves;
     setState(() {
       _isSavingMove = true;
     });
@@ -413,12 +428,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         GameStorageService.loadTotalCoins(),
         GameStorageService.loadCoinProgress(),
         GameStorageService.loadTotalPairs(),
+        GameStorageService.loadAchievement(widget.collection.id),
       ]);
       if (!mounted) return;
       setState(() {
-        totalCoins = results[0];
-        coinProgress = results[1];
-        totalPairs = results[2];
+        totalCoins = results[0] as int;
+        coinProgress = results[1] as int;
+        totalPairs = results[2] as int;
+        _achievement = results[3] as CollectionAchievement;
       });
       if (createdFinalImage) {
         unawaited(SoundService.playSecret(widget.collection.id));
@@ -431,6 +448,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             content: Text('🎉 Bạn nhận được $earnedCoins xu!'),
             backgroundColor: AppColors.butterDark,
             duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      if (firstWin && widget.mode == GameMode.free) {
+        final isRecord =
+            previousBest != null && nextState.firstWinMoves! < previousBest;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isRecord
+                  ? '🏅 Kỷ lục mới: ${nextState.firstWinMoves} lượt ghép!'
+                  : '🏅 Đã lưu thành tích: ${nextState.firstWinMoves} lượt ghép tới ảnh cuối.',
+            ),
           ),
         );
       }
@@ -456,9 +486,105 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
   }
 
+  bool get _hasRescue =>
+      widget.mode == GameMode.free &&
+      !gameState.rescueUsed &&
+      List.generate(gameState.board.length, (i) => i).any(
+        (i) => !identical(
+          GameLogic.rescue(gameState, i, widget.collection.maxLevel),
+          gameState,
+        ),
+      );
+
+  void _chooseRescue() {
+    if (_isSavingMove || isLoading || !_hasRescue) return;
+    setState(() {
+      _choosingRescue = true;
+      selectedIndex = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final boardContext = _boardKey.currentContext;
+      if (!mounted || boardContext == null || !_choosingRescue) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          boardContext,
+          duration: const Duration(milliseconds: 250),
+          alignment: 0.3,
+        ),
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Chạm ô muốn đổi để tạo một cặp ghép mới.'),
+          action: SnackBarAction(label: 'Hủy', onPressed: _cancelRescue),
+        ),
+      );
+    });
+  }
+
+  void _cancelRescue() {
+    if (_isSavingMove) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    setState(() => _choosingRescue = false);
+    _checkMilestones();
+  }
+
+  Future<void> _rescueTile(int index) async {
+    if (_isSavingMove || isLoading || widget.mode != GameMode.free) return;
+    final next = GameLogic.rescue(gameState, index, widget.collection.maxLevel);
+    if (identical(next, gameState)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ô này chưa tạo được cặp mới. Hãy chọn ô khác.'),
+        ),
+      );
+      return;
+    }
+    setState(() => _isSavingMove = true);
+    try {
+      await GameStorageService.saveGame(widget.collection.id, next);
+      if (!mounted) return;
+      setState(() {
+        gameState = next;
+        _choosingRescue = false;
+        selectedIndex = null;
+      });
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      _prefetchNearbyImages();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Chưa lưu được lượt đổi ô. Bạn vẫn còn lượt, hãy thử lại.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      _isSavingMove = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Widget _buildChallenges() => ChallengePanel(
+    achievement: _achievement,
+    state: gameState,
+    target: ChallengeGoals.targetMoves[widget.collection.id] ?? 100,
+    choosingRescue: _choosingRescue,
+    canRescue: !_isSavingMove && _hasRescue,
+    onRescue: _chooseRescue,
+    onCancel: _cancelRescue,
+  );
+
   void _checkMilestones() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || isLoading || dialogShowing) return;
+      if (!mounted ||
+          isLoading ||
+          dialogShowing ||
+          _choosingRescue ||
+          _isSavingMove) {
+        return;
+      }
 
       if (widget.mode == GameMode.timed && _timeExpired) {
         _showGameOverDialog(timeExpired: true);
@@ -475,7 +601,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _showMaxLevelDialog() async {
-    if (dialogShowing || !mounted) return;
+    if (dialogShowing || !mounted || _isSavingMove) return;
 
     dialogShowing = true;
 
@@ -488,105 +614,134 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(28),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 380),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'CHÚC MỪNG! 🎉',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 23,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.text,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 380),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'CHÚC MỪNG! 🎉',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 23,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.text,
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 8),
 
-                  const Text(
-                    'Bạn đã tạo được ảnh cấp độ cao nhất!',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.text, fontSize: 14),
-                  ),
+                    const Text(
+                      'Bạn đã tạo được ảnh cấp độ cao nhất!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.text, fontSize: 14),
+                    ),
 
-                  const SizedBox(height: 18),
+                    const SizedBox(height: 18),
 
-                  // Hiển thị ảnh cấp độ tối đa
-                  Container(
-                    width: 240,
-                    height: 240,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.butterDark.withValues(alpha: 0.2),
-                          blurRadius: 18,
-                          offset: const Offset(0, 6),
+                    // Hiển thị ảnh cấp độ tối đa
+                    Container(
+                      width: 240,
+                      height: 240,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.butterDark.withValues(alpha: 0.2),
+                            blurRadius: 18,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Image.asset(
+                          widget.collection.imagePath(
+                            widget.collection.maxLevel,
+                          ),
+                          bundle: GameImageService.bundle,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.emoji_events_rounded,
+                              size: 100,
+                              color: AppColors.butterDark,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    if (gameState.firstWinMoves != null) ...[
+                      Text(
+                        'Ảnh cuối sau ${gameState.firstWinMoves} lượt ghép',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.text,
+                        ),
+                      ),
+                      const Text(
+                        'Huy hiệu đã có',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      Text(
+                        [
+                          if (_achievement.speedWinner) '🏅 Nhanh tay',
+                          if (_achievement.cleanWinner) '🏅 Tự lực',
+                          if (_achievement.recordBreaker) '🏅 Phá kỷ lục',
+                        ].join(' • '),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              SoundService.stop();
+                              Navigator.pop(dialogContext);
+                              _restartGame();
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.text,
+                              side: const BorderSide(
+                                color: AppColors.butterDark,
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                            ),
+                            child: const Text('Chơi lại'),
+                          ),
+                        ),
+
+                        const SizedBox(width: 10),
+
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              SoundService.stop();
+                              Navigator.pop(dialogContext);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.butterDark,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                            ),
+                            child: const Text('Tiếp tục'),
+                          ),
                         ),
                       ],
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: Image.asset(
-                        widget.collection.imagePath(widget.collection.maxLevel),
-                        bundle: GameImageService.bundle,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(
-                            Icons.emoji_events_rounded,
-                            size: 100,
-                            color: AppColors.butterDark,
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            SoundService.stop();
-                            Navigator.pop(dialogContext);
-                            _restartGame();
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.text,
-                            side: const BorderSide(color: AppColors.butterDark),
-                            padding: const EdgeInsets.symmetric(vertical: 13),
-                          ),
-                          child: const Text('Chơi lại'),
-                        ),
-                      ),
-
-                      const SizedBox(width: 10),
-
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            SoundService.stop();
-                            Navigator.pop(dialogContext);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.butterDark,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 13),
-                          ),
-                          child: const Text('Tiếp tục'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -602,7 +757,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _showGameOverDialog({bool timeExpired = false}) async {
-    if (dialogShowing || !mounted) return;
+    if (dialogShowing || !mounted || _isSavingMove) return;
 
     dialogShowing = true;
 
@@ -632,6 +787,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           ),
           actionsAlignment: MainAxisAlignment.center,
           actions: [
+            if (!timeExpired && _hasRescue)
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _chooseRescue();
+                },
+                icon: const Icon(Icons.auto_fix_high_rounded),
+                label: const Text('Đổi 1 ô để cứu bàn'),
+              ),
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(dialogContext);
@@ -672,27 +836,48 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   // Chơi lại nhưng không xóa điểm cao nhất và số xu
-  void _restartGame() {
-    if (_isSavingMove) return;
+  Future<void> _restartGame() async {
+    if (_isSavingMove || isLoading || _storageLoadFailed) return;
     _gameTimer?.cancel();
     _gameTimer = null;
     _timerRunning = false;
 
-    setState(() {
-      gameState = GameLogic.createNewGame(
-        widget.collection.maxLevel,
-        spawnConfig: _spawnConfig,
-      ).copyWith(remainingSeconds: initialTimeSeconds);
-      selectedIndex = null;
-      handledMaxLevelCelebrations = 0;
-      _maxLevelNoticeShown = false;
-      _timeExpired = false;
-    });
-
-    SoundService.stop();
-    _saveCurrentGame();
-    _prefetchNearbyImages();
-    if (widget.mode == GameMode.timed) _startTimer();
+    final next = GameLogic.createNewGame(
+      widget.collection.maxLevel,
+      spawnConfig: _spawnConfig,
+    ).copyWith(remainingSeconds: initialTimeSeconds);
+    setState(() => _isSavingMove = true);
+    try {
+      await GameStorageService.saveGame(
+        widget.collection.id,
+        next,
+        mode: widget.mode,
+      );
+      if (!mounted) return;
+      setState(() {
+        gameState = next;
+        selectedIndex = null;
+        handledMaxLevelCelebrations = 0;
+        _maxLevelNoticeShown = false;
+        _timeExpired = false;
+        _choosingRescue = false;
+      });
+      unawaited(SoundService.stop());
+      _prefetchNearbyImages();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chưa lưu được ván mới. Hãy thử lại.')),
+        );
+      }
+    } finally {
+      _isSavingMove = false;
+      if (mounted) {
+        setState(() {});
+        if (widget.mode == GameMode.timed) _startTimer();
+        _checkMilestones();
+      }
+    }
   }
 
   // Thẻ thống kê
@@ -945,6 +1130,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   const SizedBox(height: 12),
 
                   _buildCoinProgressCard(),
+                  if (widget.mode == GameMode.free) ...[
+                    const SizedBox(height: 12),
+                    _buildChallenges(),
+                  ],
 
                   const SizedBox(height: 12),
 
@@ -962,7 +1151,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   const SizedBox(height: 12),
 
                   OutlinedButton.icon(
-                    onPressed: _restartGame,
+                    onPressed: _isSavingMove ? null : _restartGame,
                     icon: const Icon(Icons.refresh_rounded),
                     label: const Text('Chơi lại từ đầu'),
                     style: OutlinedButton.styleFrom(
@@ -983,6 +1172,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               child: SizedBox.square(
                 dimension: boardSize,
                 child: GameBoard(
+                  key: _boardKey,
+                  allowDrag: !_choosingRescue && !_isSavingMove,
                   board: gameState.board,
                   collection: widget.collection,
                   selectedIndex: selectedIndex,
@@ -1089,6 +1280,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               SizedBox.square(
                 dimension: boardSize,
                 child: GameBoard(
+                  key: _boardKey,
+                  allowDrag: !_choosingRescue && !_isSavingMove,
                   board: gameState.board,
                   collection: widget.collection,
                   selectedIndex: selectedIndex,
@@ -1113,8 +1306,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
               const SizedBox(height: 10),
 
+              if (widget.mode == GameMode.free) ...[
+                _buildChallenges(),
+                const SizedBox(height: 10),
+              ],
               OutlinedButton.icon(
-                onPressed: _restartGame,
+                onPressed: _isSavingMove ? null : _restartGame,
                 icon: const Icon(Icons.refresh_rounded, size: 18),
                 label: const Text('Chơi lại từ đầu'),
                 style: OutlinedButton.styleFrom(
@@ -1152,7 +1349,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           IconButton(
             tooltip: 'Chơi lại',
             icon: const Icon(Icons.refresh_rounded),
-            onPressed: isLoading ? null : _restartGame,
+            onPressed: isLoading || _isSavingMove ? null : _restartGame,
           ),
         ],
       ),

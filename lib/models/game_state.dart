@@ -3,6 +3,9 @@ class GameState {
   final int score;
   final int moves;
   final int highestDiscoveredLevel;
+  final bool rescueUsed;
+  final int? firstWinMoves;
+  final bool cleanFirstWin;
 
   final int pairsMerged;
 
@@ -23,6 +26,9 @@ class GameState {
     this.score = 0,
     this.moves = 0,
     this.highestDiscoveredLevel = 1,
+    this.rescueUsed = false,
+    this.firstWinMoves,
+    this.cleanFirstWin = false,
     this.pairsMerged = 0,
     this.maxLevelCelebrations = 0,
     this.maxLevelNoticeShownFor = 0,
@@ -36,6 +42,9 @@ class GameState {
     int? score,
     int? moves,
     int? highestDiscoveredLevel,
+    bool? rescueUsed,
+    int? firstWinMoves,
+    bool? cleanFirstWin,
     int? pairsMerged,
     int? maxLevelCelebrations,
     int? maxLevelNoticeShownFor,
@@ -49,6 +58,9 @@ class GameState {
       moves: moves ?? this.moves,
       highestDiscoveredLevel:
           highestDiscoveredLevel ?? this.highestDiscoveredLevel,
+      rescueUsed: rescueUsed ?? this.rescueUsed,
+      firstWinMoves: firstWinMoves ?? this.firstWinMoves,
+      cleanFirstWin: cleanFirstWin ?? this.cleanFirstWin,
       pairsMerged: pairsMerged ?? this.pairsMerged,
       maxLevelCelebrations: maxLevelCelebrations ?? this.maxLevelCelebrations,
       maxLevelNoticeShownFor:

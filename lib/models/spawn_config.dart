@@ -13,15 +13,35 @@ class SpawnConfig {
   });
 
   static const collections = <String, SpawnConfig>{
-    'collection_1': SpawnConfig(),
-    'collection_2': SpawnConfig(lowWeight: 0.60, middleWeight: 0.30),
-    'collection_3': SpawnConfig(lowWeight: 0.55, middleWeight: 0.30),
-    'collection_4': SpawnConfig(lowWeight: 0.55, middleWeight: 0.30),
-    'collection_5': SpawnConfig(closerSpawnChance: 0.60),
-    'collection_6': SpawnConfig(
-      closerSpawnChance: 1,
-      lowWeight: 0.45,
-      middleWeight: 0.35,
+    'collection_1': SpawnConfig(lowWeight: 0.65, middleWeight: 0.30),
+    'collection_2': SpawnConfig(
+      supportChance: 0.32,
+      lowWeight: 0.70,
+      middleWeight: 0.25,
     ),
+    'collection_3': SpawnConfig(
+      supportChance: 0.30,
+      lowWeight: 0.70,
+      middleWeight: 0.25,
+    ),
+    'collection_4': SpawnConfig(
+      supportChance: 0.28,
+      lowWeight: 0.70,
+      middleWeight: 0.25,
+    ),
+    'collection_5': SpawnConfig(
+      supportChance: 0.25,
+      closerSpawnChance: 0.20,
+      lowWeight: 0.65,
+      middleWeight: 0.30,
+    ),
+    'collection_6': SpawnConfig(
+      supportChance: 0.22,
+      closerSpawnChance: 0.45,
+      lowWeight: 0.60,
+      middleWeight: 0.30,
+    ),
+    'collection_7': SpawnConfig(),
+    'collection_8': SpawnConfig(),
   };
 }

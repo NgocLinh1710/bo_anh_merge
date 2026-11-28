@@ -26,12 +26,12 @@ void main() {
       await audio.playReward();
       expect(played, hasLength(1));
       expect(played.single, startsWith('sounds/sound_normal/'));
-      for (var n = 1; n <= 6; n++) {
+      for (var n = 1; n <= 8; n++) {
         await audio.playSecret('collection_$n');
         expect(played.last, 'sounds/sound_secret/Sound $n.mp3');
         audio.onComplete();
       }
-      expect(played, hasLength(7));
+      expect(played, hasLength(9));
     },
   );
 

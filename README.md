@@ -1,6 +1,7 @@
 # bo_anh
 
 - Tối ưu và cập nhật ảnh game: xem [docs/IMAGE_DELIVERY.md](docs/IMAGE_DELIVERY.md).
+- Độ khó, huy hiệu, đổi ô và câu hỏi vào ver 7–8: xem [docs/GAMEPLAY.md](docs/GAMEPLAY.md).
 
 - Sao lưu: bấm **Lưu tiến độ**, sau đó **Lưu ảnh QR**. Trên laptop, ảnh PNG
   tải thẳng về thư mục tải xuống mà trình duyệt đã thiết lập (thường là Downloads).
@@ -67,7 +68,7 @@
   Cấp đã khám phá được lưu cùng ván; ván cũ tự suy ra từ ảnh trên bàn.
 - Chạy `dart run tool/simulate_balance.dart` để mô phỏng 500 ván/ver cho
   từng chiến lược ghép thấp trước, cao trước và chọn ngẫu nhiên. Mốc cân bằng
-  dùng trung vị ghép thấp trước: ver 1 khoảng 120–150, ver 6 khoảng 250–320
+  dùng trung vị ghép thấp trước: ver 1 khoảng 145–170, ver 6 khoảng 400–450
   lượt tới ảnh cuối. Đây không phải số lượt cố định cho mọi người chơi.
 
 - Ảnh trong mỗi collection được xếp theo số đầu tên file (1, 2, 10...),
@@ -76,7 +77,7 @@
   ứng có thể thay đổi khi chuyển từ thứ tự tên cũ sang thứ tự số mới.
 - Ghép thường chưa nhận xu không phát hiệu ứng. Khi nhận xu, phát ngẫu nhiên
   một MP3 trong `assets/sounds/sound_normal/` một lần. Ghép ra ảnh cuối phát
-  `assets/sounds/sound_secret/Sound N.mp3` theo collection N (1–6) một lần,
+  `assets/sounds/sound_secret/Sound N.mp3` theo collection N (1–8) một lần,
   kể cả khi lượt đó đồng thời nhận xu. Sound thường không ngắt secret;
   nhạc nền SoundCloud được điều khiển riêng.
 

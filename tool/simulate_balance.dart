@@ -6,7 +6,7 @@ import 'package:bo_anh/models/spawn_config.dart';
 import 'package:bo_anh/utils/game_logic.dart';
 
 void main() {
-  const levels = [9, 9, 10, 11, 14, 22];
+  const levels = [9, 9, 10, 11, 14, 22, 3, 4];
   for (var n = 0; n < levels.length; n++) {
     for (final strategy in ['lowest', 'highest', 'random']) {
       final wins = <int>[];
