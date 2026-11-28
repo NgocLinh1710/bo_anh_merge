@@ -50,7 +50,7 @@ class SoundPlaybackController {
   }
 
   Future<void> playSecret(String collectionId) {
-    final match = RegExp(r'^collection_([1-6])$').firstMatch(collectionId);
+    final match = RegExp(r'^collection_([1-8])$').firstMatch(collectionId);
     if (match == null) return Future<void>.value();
     final generation = ++_generation;
     _secretReserved = true;

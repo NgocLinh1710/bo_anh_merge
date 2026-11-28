@@ -9,6 +9,8 @@ import '../models/game_collection.dart';
 import '../services/collection_service.dart';
 import '../services/game_storage_service.dart';
 import '../models/game_mode.dart';
+import '../models/collection_quiz.dart';
+import '../widgets/collection_quiz_dialog.dart';
 
 class CollectionScreen extends StatefulWidget {
   const CollectionScreen({super.key});
@@ -25,6 +27,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
   bool isPlayerDataLoading = true;
   bool isUnlocking = false;
+  bool _isSelectingCollection = false;
 
   @override
   void initState() {
@@ -35,22 +38,23 @@ class _CollectionScreenState extends State<CollectionScreen> {
   }
 
   // Tải số xu và danh sách ver đã mở khóa
-  Future<void> _loadPlayerData() async {
+  Future<bool> _loadPlayerData() async {
     try {
       final coins = await GameStorageService.loadTotalCoins();
       final unlocked = await GameStorageService.loadUnlockedCollections();
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       setState(() {
         totalCoins = coins;
         unlockedCollections = unlocked;
         isPlayerDataLoading = false;
       });
+      return true;
     } catch (e) {
       debugPrint('Lỗi tải dữ liệu người chơi: $e');
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       setState(() {
         isPlayerDataLoading = false;
@@ -59,6 +63,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Không thể tải dữ liệu người chơi: $e')),
       );
+      return false;
     }
   }
 
@@ -69,29 +74,45 @@ class _CollectionScreenState extends State<CollectionScreen> {
   }
 
   Future<void> selectCollection(GameCollection collection) async {
-    if (isUnlocking) return;
-
-    if (!_isUnlocked(collection)) {
-      await _showUnlockDialog(collection);
-      return;
+    if (isUnlocking || isPlayerDataLoading || _isSelectingCollection) return;
+    setState(() => _isSelectingCollection = true);
+    try {
+      if (!await _loadPlayerData() || !mounted) return;
+      if (!_isUnlocked(collection)) {
+        if (!await _showUnlockDialog(collection) || !mounted) return;
+      }
+      final quiz = CollectionQuiz.byCollection[collection.id];
+      if (quiz != null) {
+        if (!mounted) return;
+        final passed = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => CollectionQuizDialog(
+            collectionName: collection.name,
+            price: CollectionService.unlockPrice(collection.id)!,
+            quiz: quiz,
+            onSubmit: (answer) =>
+                GameStorageService.answerCollectionQuiz(collection.id, answer),
+          ),
+        );
+        if (!mounted) return;
+        if (!await _loadPlayerData() || !mounted) return;
+        if (passed != true || !_isUnlocked(collection)) return;
+      }
+      if (!mounted) return;
+      final selectedMode = await _showGameModeDialog(collection);
+      if (selectedMode == null || !mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              GameScreen(collection: collection, mode: selectedMode),
+        ),
+      );
+      if (mounted) await _loadPlayerData();
+    } finally {
+      if (mounted) setState(() => _isSelectingCollection = false);
     }
-
-    // Hiển thị lựa chọn chế độ chơi
-    final selectedMode = await _showGameModeDialog(collection);
-
-    if (selectedMode == null || !mounted) return;
-
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            GameScreen(collection: collection, mode: selectedMode),
-      ),
-    );
-
-    if (!mounted) return;
-
-    await _loadPlayerData();
   }
 
   Future<GameMode?> _showGameModeDialog(GameCollection collection) async {
@@ -271,8 +292,8 @@ class _CollectionScreenState extends State<CollectionScreen> {
   }
 
   // Hiển thị hộp thoại xác nhận mở khóa
-  Future<void> _showUnlockDialog(GameCollection collection) async {
-    if (isUnlocking) return;
+  Future<bool> _showUnlockDialog(GameCollection collection) async {
+    if (isUnlocking) return false;
 
     final price = CollectionService.unlockPrice(collection.id);
 
@@ -281,10 +302,10 @@ class _CollectionScreenState extends State<CollectionScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bộ sưu tập này hiện chưa mở bán!')),
       );
-      return;
+      return false;
     }
 
-    if (unlockedCollections.contains(collection.id)) return;
+    if (unlockedCollections.contains(collection.id)) return false;
 
     // Kiểm tra số xu hiện có
     if (totalCoins < price) {
@@ -294,7 +315,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
           backgroundColor: Colors.deepOrange,
         ),
       );
-      return;
+      return false;
     }
 
     final screenSize = MediaQuery.sizeOf(context);
@@ -382,6 +403,20 @@ class _CollectionScreenState extends State<CollectionScreen> {
                         ),
                       ),
 
+                      if (CollectionQuiz.byCollection.containsKey(
+                        collection.id,
+                      )) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Mỗi lần vào chơi cần trả lời câu hỏi. Nếu trả lời sai, ver sẽ khóa lại và lần mở tiếp theo tốn $price xu. Xu đã dùng mở khóa không được hoàn lại.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.deepOrange,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+
                       const SizedBox(height: 16),
 
                       // Giá mở khóa
@@ -463,15 +498,15 @@ class _CollectionScreenState extends State<CollectionScreen> {
     );
 
     if (shouldUnlock != true || !mounted || isUnlocking) {
-      return;
+      return false;
     }
 
-    await _processUnlock(collection, price);
+    return _processUnlock(collection, price);
   }
 
   // Thực hiện mở khóa và cập nhật dữ liệu
-  Future<void> _processUnlock(GameCollection collection, int price) async {
-    if (isUnlocking) return;
+  Future<bool> _processUnlock(GameCollection collection, int price) async {
+    if (isUnlocking) return false;
 
     setState(() {
       isUnlocking = true;
@@ -483,13 +518,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
         price,
       );
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       // Tải lại số xu và danh sách đã mở khóa
       final newCoins = await GameStorageService.loadTotalCoins();
       final newUnlocked = await GameStorageService.loadUnlockedCollections();
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       setState(() {
         totalCoins = newCoins;
@@ -499,7 +534,11 @@ class _CollectionScreenState extends State<CollectionScreen> {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Đã mở khóa ${collection.name} thành công!'),
+            content: Text(
+              CollectionQuiz.byCollection.containsKey(collection.id)
+                  ? 'Đã thanh toán mở khóa. Hãy trả lời câu hỏi để vào chơi.'
+                  : 'Đã mở khóa ${collection.name} thành công!',
+            ),
             backgroundColor: AppColors.butterDark,
           ),
         );
@@ -511,11 +550,12 @@ class _CollectionScreenState extends State<CollectionScreen> {
           ),
         );
       }
+      return success;
     } catch (e, stackTrace) {
       debugPrint('Lỗi mở khóa bộ sưu tập: $e');
       debugPrintStack(stackTrace: stackTrace);
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -524,6 +564,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
           duration: const Duration(seconds: 5),
         ),
       );
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -674,7 +715,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
                       collection: collection,
                       isUnlocked: isUnlocked,
                       price: CollectionService.unlockPrice(collection.id),
-                      isUnlocking: isUnlocking,
+                      isUnlocking: isUnlocking || _isSelectingCollection,
                       onTap: () => selectCollection(collection),
                     );
                   },
@@ -861,9 +902,11 @@ class _CollectionCard extends StatelessWidget {
               const SizedBox(height: 10),
 
               if (isUnlocked)
-                const Text(
-                  'CHỌN  →',
-                  style: TextStyle(
+                Text(
+                  CollectionQuiz.byCollection.containsKey(collection.id)
+                      ? 'TRẢ LỜI ĐỂ CHƠI  →'
+                      : 'CHỌN  →',
+                  style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     color: AppColors.butterDark,

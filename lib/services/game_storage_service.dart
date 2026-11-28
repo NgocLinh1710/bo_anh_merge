@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/game_mode.dart';
 import '../models/game_state.dart';
+import '../models/collection_achievement.dart';
+import '../models/collection_quiz.dart';
 
 class GameStorageService {
   static const int pairsPerReward = 14;
@@ -15,6 +17,8 @@ class GameStorageService {
     'collection_4': 24,
     'collection_5': 28,
     'collection_6': 30,
+    'collection_7': 11,
+    'collection_8': 11,
   };
   static int coinsPerReward(String collectionId) =>
       collectionRewardCoins[collectionId] ?? 11;
@@ -73,6 +77,9 @@ class GameStorageService {
       'score': state.score,
       'moves': state.moves,
       'highestDiscoveredLevel': state.highestDiscoveredLevel,
+      'rescueUsed': state.rescueUsed,
+      'firstWinMoves': state.firstWinMoves,
+      'cleanFirstWin': state.cleanFirstWin,
       'pairsMerged': state.pairsMerged,
       'maxLevelCelebrations': state.maxLevelCelebrations,
       'maxLevelNoticeShownFor': state.maxLevelNoticeShownFor,
@@ -83,6 +90,17 @@ class GameStorageService {
     final key = _highScoreKey(id, mode);
     if (state.score > (data.highScores[key] ?? 0)) {
       data.highScores[key] = state.score;
+    }
+    final target = ChallengeGoals.targetMoves[id];
+    if (mode == GameMode.free &&
+        state.firstWinMoves != null &&
+        target != null) {
+      data.achievements[id] =
+          (data.achievements[id] ?? const CollectionAchievement()).recordWin(
+            state.firstWinMoves!,
+            state.cleanFirstWin,
+            target,
+          );
     }
   }
 
@@ -117,6 +135,9 @@ class GameStorageService {
         score: game['score'] as int? ?? 0,
         moves: game['moves'] as int? ?? 0,
         highestDiscoveredLevel: savedHighest > highest ? savedHighest : highest,
+        rescueUsed: game['rescueUsed'] as bool? ?? false,
+        firstWinMoves: game['firstWinMoves'] as int?,
+        cleanFirstWin: game['cleanFirstWin'] as bool? ?? false,
         pairsMerged: game['pairsMerged'] as int? ?? 0,
         maxLevelCelebrations: game['maxLevelCelebrations'] as int? ?? 0,
         maxLevelNoticeShownFor: game['maxLevelNoticeShownFor'] as int? ?? 0,
@@ -192,6 +213,11 @@ class GameStorageService {
   }
 
   static Future<int> loadTotalCoins() => _access((data) => data.coins);
+  static Future<CollectionAchievement> loadAchievement(String collectionId) =>
+      _access(
+        (data) =>
+            data.achievements[collectionId] ?? const CollectionAchievement(),
+      );
   static Future<int> loadCoinProgress() => _access((data) => data.coinProgress);
   static Future<int> loadTotalPairs() => _access((data) => data.totalPairs);
   static Future<Set<String>> loadUnlockedCollections() =>
@@ -214,6 +240,24 @@ class GameStorageService {
       data.coins -= price;
       data.unlocked.add(collectionId);
       return true;
+    }, write: true);
+  }
+
+  /// A wrong submitted answer revokes access, preserving the wallet and game.
+  /// Repurchasing uses unlockCollection and charges the normal price again.
+  static Future<QuizAnswerResult> answerCollectionQuiz(
+    String collectionId,
+    QuizAnswer answer,
+  ) {
+    final quiz = CollectionQuiz.byCollection[collectionId];
+    if (quiz == null || !quiz.isValidAnswer(answer)) {
+      return Future.error(ArgumentError('Câu trả lời chưa hợp lệ.'));
+    }
+    return _access((data) {
+      if (!data.unlocked.contains(collectionId)) return QuizAnswerResult.locked;
+      if (quiz.isCorrect(answer)) return QuizAnswerResult.correct;
+      data.unlocked.remove(collectionId);
+      return QuizAnswerResult.incorrect;
     }, write: true);
   }
 
@@ -255,12 +299,16 @@ class GameStorageService {
     if (data.coins > 999999999999999 ||
         data.totalPairs > 999999999999999 ||
         data.unlocked.any((id) => !collectionRewardCoins.containsKey(id)) ||
-        data.games.length > 12 ||
-        data.highScores.length > 12) {
+        data.games.length > 16 ||
+        data.highScores.length > 16 ||
+        data.achievements.length > 8 ||
+        data.achievements.keys.any(
+          (id) => !collectionRewardCoins.containsKey(id),
+        )) {
       throw const FormatException('Bản sao lưu không hợp lệ.');
     }
     for (final entry in data.games.entries) {
-      if (!RegExp(r'^game_collection_[1-6](_timed)?$').hasMatch(entry.key)) {
+      if (!RegExp(r'^game_collection_[1-8](_timed)?$').hasMatch(entry.key)) {
         throw const FormatException('Bộ ảnh không hợp lệ.');
       }
       final game = jsonDecode(entry.value) as Map<String, dynamic>;
@@ -278,6 +326,7 @@ class GameStorageService {
         'maxLevelNoticeShownFor',
         'remainingSeconds',
         'timedRewardProgress',
+        'firstWinMoves',
       ]) {
         final value = game[key];
         if (value != null &&
@@ -285,13 +334,22 @@ class GameStorageService {
           throw const FormatException('Tiến độ không hợp lệ.');
         }
       }
-      if (game['isGameOver'] != null && game['isGameOver'] is! bool) {
-        throw const FormatException('Trạng thái ván không hợp lệ.');
+      for (final key in ['isGameOver', 'rescueUsed', 'cleanFirstWin']) {
+        if (game[key] != null && game[key] is! bool) {
+          throw const FormatException('Trạng thái ván không hợp lệ.');
+        }
+      }
+      final firstWin = game['firstWinMoves'] as int?;
+      if (firstWin != null &&
+          (firstWin < 1 ||
+              firstWin > (game['moves'] as int? ?? 0) ||
+              (game['maxLevelCelebrations'] as int? ?? 0) < 1)) {
+        throw const FormatException('Mốc hoàn thành không hợp lệ.');
       }
     }
     for (final entry in data.highScores.entries) {
       if (!RegExp(
-            r'^high_score_collection_[1-6](_timed)?$',
+            r'^high_score_collection_[1-8](_timed)?$',
           ).hasMatch(entry.key) ||
           entry.value < 0) {
         throw const FormatException('Kỷ lục không hợp lệ.');
@@ -315,6 +373,9 @@ class GameStorageService {
       data.highScores
         ..clear()
         ..addAll(restored.highScores);
+      data.achievements
+        ..clear()
+        ..addAll(restored.achievements);
       data.backupLink = jsonDecode(jsonEncode(link)) as Map<String, dynamic>;
     }, write: true);
   }
@@ -328,6 +389,7 @@ class _PlayerData {
   final Set<String> unlocked;
   final Map<String, String> games;
   final Map<String, int> highScores;
+  final Map<String, CollectionAchievement> achievements;
 
   _PlayerData({
     required this.coins,
@@ -336,8 +398,9 @@ class _PlayerData {
     required this.unlocked,
     required this.games,
     required this.highScores,
+    Map<String, CollectionAchievement>? achievements,
     this.backupLink,
-  });
+  }) : achievements = achievements ?? {};
 
   factory _PlayerData.fromLegacy(SharedPreferences prefs) => _PlayerData(
     coins: prefs.getInt('player_total_coins') ?? 0,
@@ -367,6 +430,12 @@ class _PlayerData {
       unlocked: (json['unlocked'] as List).cast<String>().toSet(),
       games: Map<String, String>.from(json['games'] as Map),
       highScores: Map<String, int>.from(json['highScores'] as Map),
+      achievements: {
+        for (final entry in (json['achievements'] as Map? ?? {}).entries)
+          entry.key as String: CollectionAchievement.fromJson(
+            Map<String, dynamic>.from(entry.value as Map),
+          ),
+      },
       backupLink: json['backupLink'] == null
           ? null
           : Map<String, dynamic>.from(json['backupLink'] as Map),
@@ -388,6 +457,9 @@ class _PlayerData {
     'unlocked': unlocked.toList()..sort(),
     'games': games,
     'highScores': highScores,
+    'achievements': {
+      for (final entry in achievements.entries) entry.key: entry.value.toJson(),
+    },
     if (includeBackupLink && backupLink != null) 'backupLink': backupLink!,
   };
 }

@@ -10,7 +10,7 @@ void main() {
   test(
     'each collection awards its configured coins only at 14 pairs',
     () async {
-      const rewards = [11, 14, 22, 24, 28, 30];
+      const rewards = [11, 14, 22, 24, 28, 30, 11, 11];
       for (var i = 0; i < rewards.length; i++) {
         SharedPreferences.setMockInitialValues({});
         final id = 'collection_${i + 1}';

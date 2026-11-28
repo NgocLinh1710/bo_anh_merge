@@ -204,6 +204,17 @@ class GameLogic {
         highest,
         board.whereType<int>().fold<int>(1, max),
       ),
+      rescueUsed: current.rescueUsed,
+      firstWinMoves:
+          current.firstWinMoves ??
+          (newLevel == maxLevel && current.maxLevelCelebrations == 0
+              ? current.moves + 1
+              : null),
+      cleanFirstWin:
+          current.cleanFirstWin ||
+          (newLevel == maxLevel &&
+              current.maxLevelCelebrations == 0 &&
+              !current.rescueUsed),
       score: current.score + gainedScore,
       moves: current.moves + 1,
       pairsMerged: current.pairsMerged + mergedPairs,
@@ -212,6 +223,33 @@ class GameLogic {
       isGameOver: isGameOver(board, maxLevel),
       remainingSeconds: current.remainingSeconds,
       timedRewardProgress: timedRewardProgress,
+    );
+  }
+
+  /// Change one chosen tile into the lowest different, non-final tile on board.
+  /// This guarantees a usable pair without granting a merge, score or reward.
+  static GameState rescue(GameState current, int index, int maxLevel) {
+    if (current.rescueUsed ||
+        index < 0 ||
+        index >= current.board.length ||
+        current.board[index] == null) {
+      return current;
+    }
+    final candidates = <int>[
+      for (var i = 0; i < current.board.length; i++)
+        if (i != index &&
+            current.board[i] != null &&
+            current.board[i]! < maxLevel &&
+            current.board[i] != current.board[index])
+          current.board[i]!,
+    ];
+    if (candidates.isEmpty) return current;
+    final board = [...current.board];
+    board[index] = candidates.reduce(min);
+    return current.copyWith(
+      board: board,
+      rescueUsed: true,
+      isGameOver: isGameOver(board, maxLevel),
     );
   }
 
